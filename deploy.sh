@@ -32,7 +32,13 @@ DB_PASSWORD=$(openssl rand -base64 32 | tr -d "=+/" | cut -c1-25)
 echo "Generated database password: $DB_PASSWORD"
 
 echo "📦 Step 1: Building Expo web app..."
-npx expo export:web
+npx expo export --platform web
+
+# Ensure the build directory exists
+if [ ! -d "dist" ]; then
+    echo "❌ Build failed - dist directory not found"
+    exit 1
+fi
 
 echo "☁️ Step 2: Deploying AWS infrastructure..."
 aws cloudformation deploy \
@@ -55,7 +61,19 @@ S3_BUCKET=$(aws cloudformation describe-stacks \
 echo "S3 Bucket: $S3_BUCKET"
 
 echo "📤 Step 4: Uploading web app to S3..."
-aws s3 sync dist/ s3://$S3_BUCKET --delete --region $AWS_REGION
+# Upload with proper cache headers
+aws s3 sync dist/ s3://$S3_BUCKET --delete --region $AWS_REGION \
+    --cache-control "public,max-age=31536000" \
+    --exclude "*.html" \
+    --exclude "sw.js" \
+    --exclude "manifest.json"
+
+# Upload HTML files with no cache
+aws s3 sync dist/ s3://$S3_BUCKET --region $AWS_REGION \
+    --cache-control "no-cache,no-store,must-revalidate" \
+    --include "*.html" \
+    --include "sw.js" \
+    --include "manifest.json"
 
 echo "🔄 Step 5: Getting CloudFront distribution ID..."
 DISTRIBUTION_ID=$(aws cloudformation describe-stacks \
