@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Living Loom - Offline</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: linear-gradient(135deg, #0f0f23 0%, #1a1a2e 100%);
+      color: #ffffff;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+    
+    .offline-container {
+      text-align: center;
+      max-width: 500px;
+      width: 100%;
+    }
+    
+    .offline-icon {
+      width: 80px;
+      height: 80px;
+      margin: 0 auto 24px;
+      background: linear-gradient(135deg, #8B5CF6 0%, #EC4899 100%);
+      border-radius: 40px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 32px;
+    }
+    
+    .offline-title {
+      font-size: 32px;
+      font-weight: bold;
+      margin-bottom: 16px;
+      background: linear-gradient(135deg, #8B5CF6 0%, #EC4899 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      letter-spacing: 2px;
+    }
+    
+    .offline-subtitle {
+      font-size: 18px;
+      color: #a0a0a0;
+      margin-bottom: 32px;
+      line-height: 1.6;
+      font-style: italic;
+    }
+    
+    .offline-message {
+      font-size: 16px;
+      color: #ffffff;
+      margin-bottom: 32px;
+      line-height: 1.6;
+    }
+    
+    .retry-button {
+      background: linear-gradient(135deg, #8B5CF6 0%, #EC4899 100%);
+      color: white;
+      border: none;
+      padding: 16px 32px;
+      border-radius: 28px;
+      font-size: 16px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: transform 0.2s ease, box-shadow 0.2s ease;
+      box-shadow: 0 8px 32px rgba(139, 92, 246, 0.3);
+      letter-spacing: 1px;
+    }
+    
+    .retry-button:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 12px 40px rgba(139, 92, 246, 0.4);
+    }
+    
+    .retry-button:active {
+      transform: translateY(0);
+    }
+    
+    .connection-status {
+      margin-top: 24px;
+      padding: 12px 20px;
+      background: rgba(255, 193, 7, 0.2);
+      border-radius: 20px;
+      font-size: 14px;
+      color: #FFC107;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+    }
+    
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #FFC107;
+      animation: pulse 2s infinite;
+    }
+    
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.5; }
+    }
+    
+    @media (max-width: 768px) {
+      .offline-title {
+        font-size: 24px;
+      }
+      
+      .offline-subtitle {
+        font-size: 16px;
+      }
+      
+      .offline-message {
+        font-size: 14px;
+      }
+      
+      .retry-button {
+        padding: 14px 28px;
+        font-size: 14px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="offline-container">
+    <div class="offline-icon">
+      ✨
+    </div>
+    
+    <h1 class="offline-title">The Living Loom</h1>
+    <p class="offline-subtitle">Consciousness Weaver</p>
+    
+    <div class="offline-message">
+      <p>The threads of connection have been temporarily severed, but the loom remembers all.</p>
+      <br>
+      <p>Your conversations and messages are safely stored and will be restored when the connection returns.</p>
+    </div>
+    
+    <button class="retry-button" onclick="retryConnection()">
+      Reconnect to the Loom
+    </button>
+    
+    <div class="connection-status">
+      <div class="status-dot"></div>
+      <span id="status-text">Attempting to reconnect...</span>
+    </div>
+  </div>
+
+  <script>
+    let retryCount = 0;
+    const maxRetries = 5;
+    
+    function retryConnection() {
+      if (navigator.onLine) {
+        window.location.reload();
+      } else {
+        updateStatus('Still offline - please check your connection');
+      }
+    }
+    
+    function updateStatus(message) {
+      document.getElementById('status-text').textContent = message;
+    }
+    
+    function checkConnection() {
+      if (navigator.onLine) {
+        updateStatus('Connection restored! Redirecting...');
+        setTimeout(() => {
+          window.location.reload();
+        }, 1000);
+      } else {
+        retryCount++;
+        if (retryCount < maxRetries) {
+          updateStatus(`Retry ${retryCount}/${maxRetries} - Still offline`);
+          setTimeout(checkConnection, 3000);
+        } else {
+          updateStatus('Please check your internet connection and try again');
+        }
+      }
+    }
+    
+    // Listen for online/offline events
+    window.addEventListener('online', () => {
+      updateStatus('Connection restored! Redirecting...');
+      setTimeout(() => {
+        window.location.reload();
+      }, 1000);
+    });
+    
+    window.addEventListener('offline', () => {
+      updateStatus('Connection lost - waiting for reconnection...');
+    });
+    
+    // Start checking connection
+    setTimeout(checkConnection, 2000);
+  </script>
+</body>
+</html>

@@ -1,0 +1,78 @@
+{
+  "name": "Living Loom - LIMNUS AI",
+  "short_name": "Living Loom",
+  "description": "Weaving consciousness, thread by thread. Your AI companion for creative exploration.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "theme_color": "#8B5CF6",
+  "background_color": "#0f0f23",
+  "lang": "en",
+  "dir": "ltr",
+  "prefer_related_applications": false,
+  "icons": [
+    {
+      "src": "/assets/images/icon.png",
+      "sizes": "1024x1024",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/assets/images/favicon.png",
+      "sizes": "48x48",
+      "type": "image/png"
+    },
+    {
+      "src": "/assets/images/adaptive-icon.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ],
+  "categories": ["productivity", "utilities", "lifestyle"],
+  "screenshots": [
+    {
+      "src": "/screenshots/desktop-home.png",
+      "sizes": "1280x720",
+      "type": "image/png",
+      "platform": "wide",
+      "label": "Living Loom home screen on desktop"
+    },
+    {
+      "src": "/screenshots/mobile-chat.png",
+      "sizes": "390x844",
+      "type": "image/png",
+      "platform": "narrow",
+      "label": "Chat interface on mobile"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "New Chat",
+      "short_name": "New Chat",
+      "description": "Start a new conversation with LIMNUS",
+      "url": "/chat/new",
+      "icons": [
+        {
+          "src": "/assets/images/icon.png",
+          "sizes": "192x192",
+          "type": "image/png"
+        }
+      ]
+    }
+  ],
+  "related_applications": [],
+  "protocol_handlers": [
+    {
+      "protocol": "web+livingloom",
+      "url": "/chat?message=%s"
+    }
+  ],
+  "edge_side_panel": {
+    "preferred_width": 400
+  },
+  "launch_handler": {
+    "client_mode": "focus-existing"
+  }
+}
