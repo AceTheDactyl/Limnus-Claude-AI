@@ -2,8 +2,8 @@ import { createTRPCReact } from '@trpc/react-query'
 import { createTRPCProxyClient, httpBatchLink } from '@trpc/client'
 import superjson from 'superjson'
 
-// Type-only import to avoid bundling backend code
-type AppRouter = any // Will be properly typed when backend is available
+// Import the AppRouter type from backend
+import type { AppRouter } from '../../../../backend/trpc/app-router'
 
 const getBaseUrl = () => {
   if (typeof window !== 'undefined') {

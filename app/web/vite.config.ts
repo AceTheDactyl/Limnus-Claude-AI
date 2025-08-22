@@ -1,12 +1,9 @@
 import { defineConfig } from 'vite'
-import react from '@vitejs/plugin-react'
+import react from '@vitejs/plugin-react-swc'
 import path from 'path'
 
 export default defineConfig({
-  plugins: [react({
-    jsxRuntime: 'automatic'
-  })],
-  root: path.resolve(__dirname),
+  plugins: [react()],
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),
@@ -19,14 +16,9 @@ export default defineConfig({
   },
   build: {
     outDir: 'dist',
-    target: 'es2020',
-    sourcemap: false,
-    minify: 'esbuild'
+    target: 'es2020'
   },
   define: {
     global: 'globalThis'
-  },
-  esbuild: {
-    target: 'es2020'
   }
 })
