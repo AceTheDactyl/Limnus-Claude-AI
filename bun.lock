@@ -14,6 +14,7 @@
         "@react-native-community/netinfo": "11.4.1",
         "@react-navigation/native": "^7.1.6",
         "@swc/core": "^1.13.4",
+        "@swc/wasm": "^1.13.4",
         "@tanstack/react-query": "^5.83.0",
         "@tanstack/react-virtual": "^3.13.12",
         "@trpc/client": "^11.4.4",
@@ -669,6 +670,8 @@
     "@swc/counter": ["@swc/counter@0.1.3", "", {}, "sha512-e2BR4lsJkkRlKZ/qCHPw9ZaSxc0MVUd7gtbtaB7aMvHeJVYe8sOB8DBZkP2DtISHGSku9sCK6T6cnY0CtXrOCQ=="],
 
     "@swc/types": ["@swc/types@0.1.24", "", { "dependencies": { "@swc/counter": "^0.1.3" } }, "sha512-tjTMh3V4vAORHtdTprLlfoMptu1WfTZG9Rsca6yOKyNYsRr+MUXutKmliB17orgSZk5DpnDxs8GUdd/qwYxOng=="],
+
+    "@swc/wasm": ["@swc/wasm@1.13.4", "", {}, "sha512-Wpt3LDI9jqF4S2mUYyyY97eyEVhtwSrxp8XPD6cSzoXG8vXOdRbnDDnNuyOhLR1BhOWdPjJGT9UXmziMqrpW4g=="],
 
     "@szmarczak/http-timer": ["@szmarczak/http-timer@4.0.6", "", { "dependencies": { "defer-to-connect": "^2.0.0" } }, "sha512-4BAffykYOgO+5nzBWYwE3W90sBgLJoUPRWWcL8wlyiM8IB8ipJz3UMJ9KXQd1RKQXpKp8Tutn80HZtWsu2u76w=="],
 
