@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useEffect, useState } from 'react'
-import type { User } from '@/types'
+import type { User } from '../types'
 
 interface AuthContextType {
   user: User | null
@@ -29,8 +29,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         email: payload.email || 'user@example.com',
         name: payload.name || 'User',
         groups: payload['cognito:groups'] || ['member'],
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString()
+
       }
       
       setUser(userData)
