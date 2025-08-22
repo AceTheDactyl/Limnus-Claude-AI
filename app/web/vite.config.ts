@@ -1,5 +1,5 @@
 import { defineConfig } from 'vite'
-import react from '@vitejs/plugin-react-swc'
+import react from '@vitejs/plugin-react'
 import path from 'path'
 
 export default defineConfig({
@@ -16,9 +16,15 @@ export default defineConfig({
   },
   build: {
     outDir: 'dist',
-    target: 'es2020'
+    target: 'es2020',
+    rollupOptions: {
+      external: ['@swc/wasm']
+    }
   },
   define: {
     global: 'globalThis'
+  },
+  optimizeDeps: {
+    exclude: ['@swc/wasm', '@swc/core']
   }
 })
