@@ -19,10 +19,6 @@ export default defineConfig({
     target: 'es2020'
   },
   define: {
-    global: 'globalThis',
-    'process.env': {}
-  },
-  optimizeDeps: {
-    exclude: ['@swc/wasm']
+    global: 'globalThis'
   }
 })
