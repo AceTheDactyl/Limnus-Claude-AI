@@ -1,7 +1,9 @@
 import { defineConfig } from 'vite'
+import react from '@vitejs/plugin-react'
 import path from 'path'
 
 export default defineConfig({
+  plugins: [react()],
   root: path.resolve(__dirname),
   resolve: {
     alias: {
@@ -17,14 +19,7 @@ export default defineConfig({
     outDir: 'dist',
     target: 'es2020'
   },
-  optimizeDeps: {
-    exclude: ['@swc/wasm', '@swc/core', '@swc/wasm-web', '@vitejs/plugin-react-swc']
-  },
   define: {
     global: 'globalThis'
-  },
-  esbuild: {
-    jsx: 'automatic',
-    loader: 'tsx'
   }
 })
