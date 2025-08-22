@@ -78,8 +78,7 @@ export default defineConfig({
       output: {
         manualChunks: {
           vendor: ['react', 'react-dom'],
-          trpc: ['@trpc/client', '@trpc/react-query'],
-          charts: ['chart.js', 'react-chartjs-2']
+          trpc: ['@trpc/client', '@trpc/react-query']
         }
       }
     }
