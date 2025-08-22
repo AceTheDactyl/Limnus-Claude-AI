@@ -1,17 +1,9 @@
 import { defineConfig } from 'vite'
-import react from '@vitejs/plugin-react'
+import react from '@vitejs/plugin-react-swc'
 import path from 'path'
 
 export default defineConfig({
-  plugins: [react({
-    babel: {
-      presets: [
-        ['@babel/preset-env', { targets: { node: 'current' } }],
-        ['@babel/preset-react', { runtime: 'automatic' }],
-        '@babel/preset-typescript'
-      ]
-    }
-  })],
+  plugins: [react()],
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),
@@ -24,15 +16,9 @@ export default defineConfig({
   },
   build: {
     outDir: 'dist',
-    target: 'es2020',
-    rollupOptions: {
-      external: ['@swc/wasm', '@swc/core']
-    }
+    target: 'es2020'
   },
   define: {
     global: 'globalThis'
-  },
-  optimizeDeps: {
-    exclude: ['@swc/wasm', '@swc/core']
   }
 })
