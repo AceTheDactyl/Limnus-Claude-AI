@@ -1,16 +1,8 @@
 import { defineConfig } from 'vite'
-import react from '@vitejs/plugin-react-swc'
-// import { VitePWA } from 'vite-plugin-pwa'
-import tsconfigPaths from 'vite-tsconfig-paths'
 import path from 'path'
 
 export default defineConfig({
-  plugins: [
-    tsconfigPaths(),
-    react()
-    // Temporarily disabled PWA plugin
-    // VitePWA({ ... })
-  ],
+  root: path.resolve(__dirname),
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),
@@ -19,34 +11,20 @@ export default defineConfig({
   },
   server: {
     port: 3000,
-    proxy: {
-      '/api': {
-        target: 'http://localhost:3001',
-        changeOrigin: true
-      }
-    }
+    host: true
   },
   build: {
     outDir: 'dist',
-    sourcemap: true,
-    target: 'esnext',
-    rollupOptions: {
-      output: {
-        manualChunks: {
-          vendor: ['react', 'react-dom'],
-          trpc: ['@trpc/client', '@trpc/react-query']
-        }
-      }
-    }
+    target: 'es2020'
   },
   optimizeDeps: {
-    include: ['react', 'react-dom', '@trpc/client', '@trpc/react-query']
+    exclude: ['@swc/wasm', '@swc/core', '@swc/wasm-web', '@vitejs/plugin-react-swc']
   },
   define: {
-    global: 'globalThis',
-    'process.env': {}
+    global: 'globalThis'
   },
   esbuild: {
-    logOverride: { 'this-is-undefined-in-esm': 'silent' }
+    jsx: 'automatic',
+    loader: 'tsx'
   }
 })
