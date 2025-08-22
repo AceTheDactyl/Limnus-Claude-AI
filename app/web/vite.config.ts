@@ -3,7 +3,9 @@ import react from '@vitejs/plugin-react'
 import path from 'path'
 
 export default defineConfig({
-  plugins: [react()],
+  plugins: [react({
+    jsxRuntime: 'automatic'
+  })],
   root: path.resolve(__dirname),
   resolve: {
     alias: {
@@ -17,9 +19,14 @@ export default defineConfig({
   },
   build: {
     outDir: 'dist',
-    target: 'es2020'
+    target: 'es2020',
+    sourcemap: false,
+    minify: 'esbuild'
   },
   define: {
     global: 'globalThis'
+  },
+  esbuild: {
+    target: 'es2020'
   }
 })
