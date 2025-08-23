@@ -253,15 +253,15 @@ export default function ChatHomeScreen() {
       { backgroundColor: isConnected ? Colors.light.success + '20' : Colors.light.notification + '20' }
     ]}>
       {isConnected ? (
-        <>
+        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
           <Wifi size={12} color={Colors.light.success} />
           <Text style={[styles.connectionText, { color: Colors.light.success }]}>Connected</Text>
-        </>
+        </View>
       ) : (
-        <>
+        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
           <WifiOff size={12} color={Colors.light.notification} />
           <Text style={[styles.connectionText, { color: Colors.light.notification }]}>Reconnecting...</Text>
-        </>
+        </View>
       )}
     </View>
   );

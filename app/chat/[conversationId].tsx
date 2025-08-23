@@ -593,20 +593,20 @@ export default function ChatScreen() {
           }
         ]}>
           {connectionStatus === 'online' ? (
-            <>
+            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
               <Wifi size={12} color={Colors.light.success} />
               <Text style={[styles.connectionText, { color: Colors.light.success }]}>Connected</Text>
-            </>
+            </View>
           ) : connectionStatus === 'reconnecting' ? (
-            <>
+            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
               <RefreshCw size={12} color={Colors.light.warning} />
               <Text style={[styles.connectionText, { color: Colors.light.warning }]}>Reconnecting...</Text>
-            </>
+            </View>
           ) : (
-            <>
+            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
               <WifiOff size={12} color={Colors.light.notification} />
               <Text style={[styles.connectionText, { color: Colors.light.notification }]}>Offline</Text>
-            </>
+            </View>
           )}
         </View>
         
@@ -626,9 +626,7 @@ export default function ChatScreen() {
             }}
           >
             <RefreshCw size={14} color="#FFC107" />
-            <Text style={styles.offlineQueueText}>
-              Messages queued for sending - Tap to retry
-            </Text>
+            <Text style={styles.offlineQueueText}>Messages queued for sending - Tap to retry</Text>
           </TouchableOpacity>
         )}
         
