@@ -60,38 +60,44 @@ Your React Native app is now ready for PWA deployment with Capacitor for app sto
 - **Connection Monitoring**: Web and mobile network detection
 - **Background Sync**: Automatic retry of failed messages
 
-## Step 2: Mobile App Strategy (Expo Limitations)
+## Step 2: Capacitor Setup (For App Stores)
 
-### Current Limitation
-Your app uses Expo Go, which doesn't support Capacitor plugins. You have three options:
-
-### Option A: PWA-First Approach (Recommended)
+### Install Capacitor CLI
 ```bash
-# Deploy as PWA only
-# Users install via "Add to Home Screen"
-# Full offline functionality included
-# No app store approval needed
+npm install -g @capacitor/cli
 ```
 
-### Option B: Expo EAS Build (Future)
+### Initialize Capacitor Project
 ```bash
-# Requires Expo EAS subscription
-npx install -g @expo/cli
-npx eas build --platform all
-
-# Builds standalone apps for stores
-# Full native API access
-# App store distribution
-```
-
-### Option C: Eject to Bare React Native + Capacitor
-```bash
-# WARNING: This is irreversible
-npx expo eject
-
-# Then follow Capacitor setup
-npm install @capacitor/core @capacitor/cli
+# In your project root
 npx cap init "Living Loom" "com.livingloom.app"
+```
+
+### Build Web Assets
+```bash
+# Build your Expo web app
+npx expo export:web
+
+# Copy to Capacitor
+npx cap copy
+```
+
+### Add Platforms
+```bash
+# Add iOS platform
+npx cap add ios
+
+# Add Android platform  
+npx cap add android
+```
+
+### Open in Native IDEs
+```bash
+# Open iOS project in Xcode
+npx cap open ios
+
+# Open Android project in Android Studio
+npx cap open android
 ```
 
 ## Step 3: AWS Deployment Architecture
@@ -135,19 +141,16 @@ aws s3 sync dist/ s3://living-loom-web-app --delete
 aws cloudfront create-invalidation --distribution-id YOUR_DISTRIBUTION_ID --paths "/*"
 ```
 
-### 2. Build Mobile Apps (If using EAS)
+### 2. Build Mobile Apps
 ```bash
-# Configure EAS
-npx eas build:configure
+# Sync web assets to native projects
+npx cap sync
 
-# Build for iOS
-npx eas build --platform ios
+# Build iOS (requires Xcode)
+npx cap build ios
 
-# Build for Android
-npx eas build --platform android
-
-# Submit to stores
-npx eas submit --platform all
+# Build Android (requires Android Studio)
+npx cap build android
 ```
 
 ## Step 5: App Store Submission
