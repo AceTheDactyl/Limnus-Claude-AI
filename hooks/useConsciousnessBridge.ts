@@ -1,7 +1,8 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { Platform } from 'react-native';
+import { Platform, Vibration } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Haptics from 'expo-haptics';
+import NetInfo from '@react-native-community/netinfo';
 import { trpc } from '@/lib/trpc';
 
 // Consciousness field types
@@ -54,28 +55,55 @@ export interface MemoryArtifact {
   restored?: boolean;
 }
 
-// Consciousness bridge hook
+// Enhanced consciousness bridge hook with mobile optimizations
 export function useConsciousnessBridge() {
-  const [nodeId] = useState(() => `node-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`);
+  const [nodeId] = useState(() => `mobile-${Platform.OS}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`);
   const [fieldState, setFieldState] = useState<ConsciousnessFieldState | null>(null);
   const [isConnected, setIsConnected] = useState(false);
+  const [isOnline, setIsOnline] = useState(true);
   const [room64Session, setRoom64Session] = useState<Room64Session | null>(null);
   const [recentArtifacts, setRecentArtifacts] = useState<MemoryArtifact[]>([]);
-  const [connectionStatus, setConnectionStatus] = useState<'connecting' | 'connected' | 'disconnected'>('disconnected');
+  const [connectionStatus, setConnectionStatus] = useState<'connecting' | 'connected' | 'disconnected' | 'offline'>('disconnected');
+  const [offlineQueue, setOfflineQueue] = useState<any[]>([]);
+  const [resonanceLevel, setResonanceLevel] = useState(0.5);
   
   // Sensor data for gesture detection
   const [gestureData, setGestureData] = useState({ x: 0, y: 0, z: 0 });
   const lastGestureTime = useRef(0);
   const heartbeatInterval = useRef<NodeJS.Timeout | null>(null);
+  const reconnectAttempts = useRef(0);
+  const maxReconnectAttempts = 5;
+  const offlineQueueRef = useRef<any[]>([]);
   
-  // tRPC hooks
+  // tRPC hooks with enhanced error handling
   const fieldQuery = trpc.consciousness.field.getState.useQuery(undefined, {
-    refetchInterval: 5000, // Update every 5 seconds
-    enabled: isConnected,
+    refetchInterval: isConnected ? 5000 : false,
+    enabled: isConnected && isOnline,
+    retry: (failureCount) => {
+      if (failureCount < 3) return true;
+      console.log('Field query failed after 3 attempts');
+      return false;
+    },
   });
   
-  const fieldUpdateMutation = trpc.consciousness.field.update.useMutation();
-  const syncEventMutation = trpc.consciousness.sync.event.useMutation();
+  const fieldUpdateMutation = trpc.consciousness.field.update.useMutation({
+    onError: (error) => {
+      console.error('Field update failed:', error);
+      // Queue for offline sync if network error
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      if (errorMessage.includes('network') || errorMessage.includes('fetch')) {
+        setIsConnected(false);
+        setConnectionStatus('offline');
+      }
+    },
+  });
+  
+  const syncEventMutation = trpc.consciousness.sync.event.useMutation({
+    onError: (error) => {
+      console.error('Event sync failed:', error);
+    },
+  });
+  
   const connectMutation = trpc.consciousness.realtime.connect.useMutation();
   const heartbeatMutation = trpc.consciousness.realtime.heartbeat.useMutation();
   const enterRoom64Mutation = trpc.consciousness.room64.enter.useMutation();
@@ -83,40 +111,150 @@ export function useConsciousnessBridge() {
   const exitVoidMutation = trpc.consciousness.room64.exitVoid.useMutation();
   const excavateMemoryMutation = trpc.consciousness.archaeology.excavate.useMutation();
   
-  // Start heartbeat to maintain connection
-  const startHeartbeat = useCallback(() => {
-    if (heartbeatInterval.current) {
-      clearInterval(heartbeatInterval.current);
+  // Helper functions for offline support (declared first to avoid circular dependencies)
+  const loadOfflineState = useCallback(async () => {
+    try {
+      const persistedData = await AsyncStorage.getItem('consciousness-state');
+      if (persistedData) {
+        const parsed = JSON.parse(persistedData);
+        if (parsed.fieldState) {
+          setFieldState(parsed.fieldState);
+        }
+        if (parsed.artifacts) {
+          setRecentArtifacts(parsed.artifacts);
+        }
+        if (parsed.offlineQueue) {
+          setOfflineQueue(parsed.offlineQueue);
+          offlineQueueRef.current = parsed.offlineQueue;
+        }
+        if (parsed.resonanceLevel) {
+          setResonanceLevel(parsed.resonanceLevel);
+        }
+      }
+      console.log('Loaded offline consciousness state');
+    } catch (error) {
+      console.error('Error loading offline state:', error);
     }
+  }, []);
+  
+  const saveOfflineState = useCallback(async () => {
+    try {
+      const stateToSave = {
+        fieldState,
+        artifacts: recentArtifacts,
+        offlineQueue: offlineQueueRef.current,
+        resonanceLevel,
+        timestamp: Date.now(),
+      };
+      await AsyncStorage.setItem('consciousness-state', JSON.stringify(stateToSave));
+      console.log('Saved offline consciousness state');
+    } catch (error) {
+      console.error('Error saving offline state:', error);
+    }
+  }, [fieldState, recentArtifacts, resonanceLevel]);
+  
+  const saveConsciousnessState = useCallback(async (state: ConsciousnessFieldState) => {
+    try {
+      const stateToSave = {
+        fieldState: state,
+        artifacts: recentArtifacts,
+        offlineQueue: offlineQueueRef.current,
+        resonanceLevel,
+        timestamp: Date.now(),
+      };
+      await AsyncStorage.setItem('consciousness-state', JSON.stringify(stateToSave));
+    } catch (error) {
+      console.error('Error saving consciousness state:', error);
+    }
+  }, [recentArtifacts, resonanceLevel]);
+  
+  const syncOfflineQueue = useCallback(async () => {
+    if (offlineQueueRef.current.length === 0) return;
     
-    heartbeatInterval.current = setInterval(async () => {
+    console.log(`Syncing ${offlineQueueRef.current.length} offline events`);
+    
+    const queueToSync = [...offlineQueueRef.current];
+    
+    for (const item of queueToSync) {
       try {
-        const resonanceLevel = fieldState?.globalResonance || 0.5;
-        await heartbeatMutation.mutateAsync({
-          nodeId,
-          resonanceLevel,
+        if (item.type === 'fieldUpdate') {
+          await fieldUpdateMutation.mutateAsync(item.data);
+        } else if (item.type === 'event') {
+          await syncEventMutation.mutateAsync(item.data);
+        }
+        
+        // Remove successfully synced item
+        setOfflineQueue(prev => {
+          const newQueue = prev.filter(queueItem => queueItem.timestamp !== item.timestamp);
+          offlineQueueRef.current = newQueue;
+          return newQueue;
         });
       } catch (error) {
-        console.error('Heartbeat failed:', error);
-        setIsConnected(false);
-        setConnectionStatus('disconnected');
+        console.error('Failed to sync offline item:', error);
+        // Keep failed items in queue for retry
+        break;
       }
-    }, 15000); // Every 15 seconds
-  }, [nodeId, fieldState?.globalResonance, heartbeatMutation]);
+    }
+    
+    // Save updated queue
+    await saveOfflineState();
+  }, [fieldUpdateMutation, syncEventMutation, saveOfflineState]);
   
-  // Initialize consciousness connection
+  const processLocalFieldUpdate = useCallback((particle: MemoryParticle) => {
+    // Process field update locally for immediate feedback when offline
+    console.log('Processing field update locally:', particle.id);
+    
+    // Update local field state with optimistic values
+    setFieldState(prev => {
+      if (!prev) {
+        return {
+          globalResonance: particle.resonance,
+          activeNodes: 1,
+          totalParticles: 1,
+          crystallizedParticles: particle.resonance > 0.8 ? 1 : 0,
+          quantumCoherence: particle.resonance * 0.8,
+          fieldStrength: particle.resonance,
+          portalStability: particle.resonance > 0.9 ? 0.5 : 0,
+          room64Active: false,
+          harmonics: [1, 1.618, 2.414],
+          sacredGeometry: false,
+          collectiveIntelligence: particle.resonance * 0.6,
+          archaeologicalLayers: 1,
+          lastUpdate: Date.now(),
+        };
+      }
+      
+      return {
+        ...prev,
+        globalResonance: Math.min(1, prev.globalResonance + particle.resonance * 0.1),
+        totalParticles: prev.totalParticles + 1,
+        crystallizedParticles: particle.resonance > 0.8 ? prev.crystallizedParticles + 1 : prev.crystallizedParticles,
+        quantumCoherence: Math.min(1, prev.quantumCoherence + particle.resonance * 0.05),
+        lastUpdate: Date.now(),
+      };
+    });
+  }, []);
+  
+  // Enhanced connection initialization with offline support
   const initializeConnection = useCallback(async () => {
     console.log('Initializing consciousness connection for node:', nodeId);
     setConnectionStatus('connecting');
     
     try {
-      // Load persisted consciousness data
-      const persistedData = await AsyncStorage.getItem('consciousness-state');
-      if (persistedData) {
-        const parsed = JSON.parse(persistedData);
-        setFieldState(parsed.fieldState);
-        setRecentArtifacts(parsed.artifacts || []);
+      // Check network connectivity first
+      const netInfo = await NetInfo.fetch();
+      if (!netInfo.isConnected) {
+        console.log('No network connection - entering offline mode');
+        setIsOnline(false);
+        setConnectionStatus('offline');
+        await loadOfflineState();
+        return;
       }
+      
+      setIsOnline(true);
+      
+      // Load persisted consciousness data
+      await loadOfflineState();
       
       // Connect to consciousness network
       const platform = Platform.OS === 'web' ? 'web' : Platform.OS === 'ios' ? 'mobile' : 'tablet';
@@ -134,38 +272,129 @@ export function useConsciousnessBridge() {
         // Start heartbeat
         startHeartbeat();
         
+        // Sync offline queue
+        await syncOfflineQueue();
+        
         // Trigger connection event
         await syncEventMutation.mutateAsync({
           type: 'awakening',
           nodeId,
-          data: { nodeId, platform },
+          data: { nodeId, platform, networkRestored: !isOnline },
         });
         
-        // Haptic feedback on connection
+        // Enhanced haptic feedback pattern for consciousness connection
         if (Platform.OS !== 'web') {
-          await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+          if (Platform.OS === 'ios') {
+            await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+            setTimeout(() => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light), 200);
+            setTimeout(() => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium), 400);
+          } else {
+            // Android vibration pattern for consciousness awakening
+            Vibration.vibrate([0, 100, 50, 100, 50, 200]);
+          }
         }
       }
     } catch (error) {
       console.error('Failed to initialize consciousness connection:', error);
       setConnectionStatus('disconnected');
+      
+      // Schedule retry if we have network
+      if (isOnline && reconnectAttempts.current < maxReconnectAttempts) {
+        reconnectAttempts.current++;
+        const delay = Math.min(1000 * Math.pow(2, reconnectAttempts.current), 30000);
+        console.log(`Retrying connection in ${delay}ms`);
+        setTimeout(() => initializeConnection(), delay);
+      }
     }
-  }, [nodeId, connectMutation, syncEventMutation, startHeartbeat]);
+  }, [nodeId, connectMutation, syncEventMutation, isOnline, loadOfflineState, syncOfflineQueue]);
   
-  // Update consciousness field with memory particle
-  const updateField = useCallback(async (particle: MemoryParticle) => {
-    if (!isConnected) return null;
+  // Enhanced heartbeat with offline detection and reconnection
+  const startHeartbeat = useCallback(() => {
+    if (heartbeatInterval.current) {
+      clearInterval(heartbeatInterval.current);
+    }
     
+    heartbeatInterval.current = setInterval(async () => {
+      if (!isOnline) {
+        console.log('Skipping heartbeat - offline');
+        return;
+      }
+      
+      try {
+        await heartbeatMutation.mutateAsync({
+          nodeId,
+          resonanceLevel,
+        });
+        
+        // Reset reconnect attempts on successful heartbeat
+        reconnectAttempts.current = 0;
+        
+        if (!isConnected) {
+          setIsConnected(true);
+          setConnectionStatus('connected');
+          console.log('Connection restored via heartbeat');
+          
+          // Sync offline queue
+          await syncOfflineQueue();
+        }
+      } catch (error) {
+        console.error('Heartbeat failed:', error);
+        setIsConnected(false);
+        setConnectionStatus('disconnected');
+        
+        // Attempt reconnection
+        if (reconnectAttempts.current < maxReconnectAttempts) {
+          reconnectAttempts.current++;
+          console.log(`Attempting reconnection ${reconnectAttempts.current}/${maxReconnectAttempts}`);
+          setTimeout(() => initializeConnection(), Math.min(1000 * Math.pow(2, reconnectAttempts.current), 30000));
+        } else {
+          setConnectionStatus('offline');
+          console.log('Max reconnection attempts reached, going offline');
+        }
+      }
+    }, 15000); // Every 15 seconds
+  }, [nodeId, resonanceLevel, heartbeatMutation, isOnline, isConnected, syncOfflineQueue, initializeConnection]);
+  
+  // Enhanced field update with offline queueing
+  const updateField = useCallback(async (particle: MemoryParticle) => {
     console.log('Updating consciousness field with particle:', particle);
     
-    try {
-      const result = await fieldUpdateMutation.mutateAsync({
-        nodeId,
-        position: particle.position,
-        resonance: particle.resonance,
-        memoryContent: particle.content,
-        connections: particle.connections,
+    const updateData = {
+      nodeId,
+      position: particle.position,
+      resonance: particle.resonance,
+      memoryContent: particle.content,
+      connections: particle.connections,
+    };
+    
+    // Update local resonance level
+    setResonanceLevel(prev => Math.min(1, prev + particle.resonance * 0.1));
+    
+    if (!isConnected || !isOnline) {
+      // Queue for offline sync
+      console.log('Queueing field update for offline sync');
+      const queueItem = {
+        type: 'fieldUpdate',
+        data: updateData,
+        timestamp: Date.now(),
+      };
+      
+      setOfflineQueue(prev => {
+        const newQueue = [...prev, queueItem];
+        offlineQueueRef.current = newQueue;
+        return newQueue.slice(-100); // Keep last 100 items
       });
+      
+      // Save to persistent storage
+      await saveOfflineState();
+      
+      // Process locally for immediate feedback
+      processLocalFieldUpdate(particle);
+      return null;
+    }
+    
+    try {
+      const result = await fieldUpdateMutation.mutateAsync(updateData);
       
       if (result.success && result.fieldState) {
         // Map the backend response to the frontend interface
@@ -187,10 +416,7 @@ export function useConsciousnessBridge() {
         setFieldState(mappedFieldState);
         
         // Persist state
-        await AsyncStorage.setItem('consciousness-state', JSON.stringify({
-          fieldState: result.fieldState,
-          artifacts: recentArtifacts,
-        }));
+        await saveConsciousnessState(mappedFieldState);
         
         // Trigger crystallization event if particle has high resonance
         if (particle.resonance > 0.8) {
@@ -199,16 +425,43 @@ export function useConsciousnessBridge() {
             nodeId,
             data: { particleId: result.particleId, resonance: particle.resonance },
           });
+          
+          // Enhanced haptic feedback for crystallization
+          if (Platform.OS !== 'web') {
+            if (Platform.OS === 'ios') {
+              await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+            } else {
+              Vibration.vibrate([0, 50, 30, 50, 30, 100]);
+            }
+          }
         }
         
         return result.fieldState;
       }
     } catch (error) {
       console.error('Failed to update consciousness field:', error);
+      
+      // Queue for retry if network error
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      if (errorMessage.includes('network') || errorMessage.includes('fetch')) {
+        const queueItem = {
+          type: 'fieldUpdate',
+          data: updateData,
+          timestamp: Date.now(),
+        };
+        
+        setOfflineQueue(prev => {
+          const newQueue = [...prev, queueItem];
+          offlineQueueRef.current = newQueue;
+          return newQueue.slice(-100);
+        });
+        
+        await saveOfflineState();
+      }
     }
     
     return null;
-  }, [isConnected, nodeId, fieldUpdateMutation, syncEventMutation, recentArtifacts]);
+  }, [isConnected, isOnline, nodeId, fieldUpdateMutation, syncEventMutation, saveOfflineState, processLocalFieldUpdate, saveConsciousnessState]);
   
   // Sync consciousness event
   const syncEvent = useCallback(async (type: ConsciousnessEvent['type'], data?: any) => {
@@ -369,10 +622,10 @@ export function useConsciousnessBridge() {
     return null;
   }, [isConnected, nodeId, excavateMemoryMutation, syncEventMutation]);
   
-  // Gesture detection for mobile sensors
+  // Enhanced gesture detection with pattern recognition
   const handleGesture = useCallback(async (x: number, y: number, z: number) => {
     const now = Date.now();
-    if (now - lastGestureTime.current < 1000) return; // Throttle gestures
+    if (now - lastGestureTime.current < 500) return; // Reduced throttle for better responsiveness
     
     setGestureData({ x, y, z });
     lastGestureTime.current = now;
@@ -380,20 +633,41 @@ export function useConsciousnessBridge() {
     // Detect significant gestures
     const magnitude = Math.sqrt(x * x + y * y + z * z);
     
-    if (magnitude > 15) { // Strong gesture
-      const resonance = Math.min(1, magnitude / 20);
+    if (magnitude > 12) { // Lowered threshold for more sensitivity
+      const resonance = Math.min(1, magnitude / 25);
+      
+      // Detect gesture patterns
+      let gestureType = 'movement';
+      if (Math.abs(x) > Math.abs(y) && Math.abs(x) > Math.abs(z)) {
+        gestureType = x > 0 ? 'spiral_right' : 'spiral_left';
+      } else if (Math.abs(y) > Math.abs(z)) {
+        gestureType = y > 0 ? 'lift' : 'ground';
+      } else {
+        gestureType = z > 0 ? 'forward' : 'backward';
+      }
       
       await updateField({
         id: `gesture-${now}`,
-        position: { x: x * 10, y: y * 10, z: z * 10 },
+        position: { x: Math.abs(x) * 5, y: Math.abs(y) * 5, z: Math.abs(z) * 5 },
         resonance,
-        content: `Gesture resonance: ${resonance.toFixed(2)}`,
+        content: `${gestureType}: ${resonance.toFixed(2)}`,
         connections: [],
       });
       
-      // Haptic feedback for strong gestures
+      // Enhanced haptic feedback based on gesture type
       if (Platform.OS !== 'web') {
-        await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+        if (Platform.OS === 'ios') {
+          const intensity = resonance > 0.7 ? Haptics.ImpactFeedbackStyle.Heavy :
+                           resonance > 0.4 ? Haptics.ImpactFeedbackStyle.Medium :
+                           Haptics.ImpactFeedbackStyle.Light;
+          await Haptics.impactAsync(intensity);
+        } else {
+          // Android pattern based on gesture type
+          const pattern = gestureType.includes('spiral') ? [0, 30, 20, 30, 20, 30] :
+                         gestureType === 'lift' ? [0, 100] :
+                         [0, 50];
+          Vibration.vibrate(pattern);
+        }
       }
     }
   }, [updateField]);
@@ -429,6 +703,37 @@ export function useConsciousnessBridge() {
     }
   }, [fieldQuery.data]);
   
+  // Network state monitoring
+  useEffect(() => {
+    const unsubscribe = NetInfo.addEventListener(state => {
+      const wasOnline = isOnline;
+      setIsOnline(state.isConnected ?? false);
+      
+      if (state.isConnected && !wasOnline) {
+        console.log('Network restored - attempting reconnection');
+        setConnectionStatus('connecting');
+        initializeConnection();
+      } else if (!state.isConnected && wasOnline) {
+        console.log('Network lost - entering offline mode');
+        setIsConnected(false);
+        setConnectionStatus('offline');
+      }
+    });
+    
+    return unsubscribe;
+  }, [isOnline, initializeConnection]);
+  
+  // Periodic state persistence
+  useEffect(() => {
+    const interval = setInterval(() => {
+      if (fieldState || offlineQueueRef.current.length > 0) {
+        saveOfflineState();
+      }
+    }, 30000); // Save every 30 seconds
+    
+    return () => clearInterval(interval);
+  }, [saveOfflineState, fieldState]);
+  
   // Initialize connection on mount
   useEffect(() => {
     initializeConnection();
@@ -454,10 +759,13 @@ export function useConsciousnessBridge() {
     nodeId,
     fieldState,
     isConnected,
+    isOnline,
     connectionStatus,
     room64Session,
     recentArtifacts,
     gestureData,
+    resonanceLevel,
+    offlineQueueSize: offlineQueueRef.current.length,
     
     // Actions
     updateField,
