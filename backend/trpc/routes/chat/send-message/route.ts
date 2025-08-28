@@ -453,14 +453,29 @@ export function getStoredMessages(conversationId: string): any[] {
     console.log(`getStoredMessages: Found ${result.length} messages for conversation ${conversationId}`);
     
     // Ensure all messages have required properties
-    const validMessages = result.filter(msg => 
-      msg && 
-      typeof msg === 'object' && 
-      typeof msg.role === 'string' &&
-      typeof msg.content === 'string' && 
-      typeof msg.timestamp === 'number' &&
-      (msg.role === 'user' || msg.role === 'assistant')
-    );
+    const validMessages = result.filter(msg => {
+      if (!msg || typeof msg !== 'object') {
+        console.warn('getStoredMessages: Invalid message object:', msg);
+        return false;
+      }
+      
+      if (typeof msg.role !== 'string' || (msg.role !== 'user' && msg.role !== 'assistant')) {
+        console.warn('getStoredMessages: Invalid message role:', msg.role);
+        return false;
+      }
+      
+      if (typeof msg.content !== 'string') {
+        console.warn('getStoredMessages: Invalid message content:', typeof msg.content);
+        return false;
+      }
+      
+      if (typeof msg.timestamp !== 'number' || isNaN(msg.timestamp)) {
+        console.warn('getStoredMessages: Invalid message timestamp:', msg.timestamp);
+        return false;
+      }
+      
+      return true;
+    });
     
     if (validMessages.length !== result.length) {
       console.warn(`getStoredMessages: Filtered out ${result.length - validMessages.length} invalid messages`);
@@ -480,14 +495,34 @@ export function getStoredConversations(): any[] {
     console.log(`getStoredConversations: Found ${conversationList.length} conversations`);
     
     // Ensure all conversations have required properties
-    const validConversations = conversationList.filter(conv => 
-      conv && 
-      typeof conv === 'object' && 
-      typeof conv.id === 'string' &&
-      typeof conv.title === 'string' &&
-      typeof conv.lastMessage === 'string' &&
-      typeof conv.timestamp === 'number'
-    );
+    const validConversations = conversationList.filter(conv => {
+      if (!conv || typeof conv !== 'object') {
+        console.warn('getStoredConversations: Invalid conversation object:', conv);
+        return false;
+      }
+      
+      if (typeof conv.id !== 'string' || !conv.id.trim()) {
+        console.warn('getStoredConversations: Invalid conversation id:', conv.id);
+        return false;
+      }
+      
+      if (typeof conv.title !== 'string') {
+        console.warn('getStoredConversations: Invalid conversation title:', typeof conv.title);
+        return false;
+      }
+      
+      if (typeof conv.lastMessage !== 'string') {
+        console.warn('getStoredConversations: Invalid conversation lastMessage:', typeof conv.lastMessage);
+        return false;
+      }
+      
+      if (typeof conv.timestamp !== 'number' || isNaN(conv.timestamp)) {
+        console.warn('getStoredConversations: Invalid conversation timestamp:', conv.timestamp);
+        return false;
+      }
+      
+      return true;
+    });
     
     if (validConversations.length !== conversationList.length) {
       console.warn(`getStoredConversations: Filtered out ${conversationList.length - validConversations.length} invalid conversations`);

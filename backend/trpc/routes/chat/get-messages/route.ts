@@ -8,7 +8,7 @@ const getMessagesSchema = z.object({
 
 export const getMessagesProcedure = publicProcedure
   .input(getMessagesSchema)
-  .query(({ input }) => {
+  .query(async ({ input }) => {
     const { conversationId } = input;
     
     console.log('Getting messages for conversation:', conversationId);
@@ -36,16 +36,6 @@ export const getMessagesProcedure = publicProcedure
           content: m.content.substring(0, 50) + '...', 
           timestamp: m.timestamp 
         })));
-      }
-      
-      // Always return a valid structure, even if empty
-      if (messages.length === 0) {
-        console.log('No stored messages found for conversation:', conversationId);
-        const result = {
-          messages: [],
-        };
-        console.log('Returning empty messages result:', result);
-        return result;
       }
       
       // Ensure messages are properly sorted by timestamp

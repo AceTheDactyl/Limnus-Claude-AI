@@ -2,7 +2,7 @@ import { publicProcedure } from "../../../create-context";
 import { getStoredConversations } from "../send-message/route";
 
 export const getConversationsProcedure = publicProcedure
-  .query(() => {
+  .query(async () => {
     console.log('Getting conversations');
     
     try {
@@ -13,16 +13,6 @@ export const getConversationsProcedure = publicProcedure
       
       // Ensure we always have an array
       const conversations = Array.isArray(storedConversations) ? storedConversations : [];
-      
-      // Always return a valid structure, even if empty
-      if (conversations.length === 0) {
-        console.log('No stored conversations found, returning empty array');
-        const result = {
-          conversations: [],
-        };
-        console.log('Returning result:', result);
-        return result;
-      }
       
       // Ensure conversations are properly sorted
       const sortedConversations = conversations.sort((a, b) => b.timestamp - a.timestamp);
