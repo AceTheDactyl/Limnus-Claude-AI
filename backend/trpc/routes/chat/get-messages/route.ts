@@ -17,8 +17,8 @@ export const getMessagesProcedure = publicProcedure
       // Get messages from storage
       const storedMessages = getStoredMessages(conversationId);
       
-      console.log('Found stored messages:', storedMessages.length);
-      if (storedMessages.length > 0) {
+      console.log('Found stored messages:', storedMessages?.length || 0);
+      if (storedMessages && storedMessages.length > 0) {
         console.log('Message details:', storedMessages.map(m => ({ 
           role: m.role, 
           content: m.content.substring(0, 50) + '...', 
@@ -29,22 +29,28 @@ export const getMessagesProcedure = publicProcedure
       // Always return a valid structure, even if empty
       if (!storedMessages || storedMessages.length === 0) {
         console.log('No stored messages found for conversation:', conversationId);
-        return {
+        const result = {
           messages: [],
         };
+        console.log('Returning empty messages result:', result);
+        return result;
       }
       
       // Ensure messages are properly sorted by timestamp
       const sortedMessages = storedMessages.sort((a, b) => a.timestamp - b.timestamp);
       
-      return {
+      const result = {
         messages: sortedMessages,
       };
+      console.log('Returning messages result:', { messageCount: result.messages.length });
+      return result;
     } catch (error) {
       console.error('Error getting messages for conversation:', conversationId, error);
       // Always return a valid structure on error
-      return {
+      const errorResult = {
         messages: [],
       };
+      console.log('Returning error messages result:', errorResult);
+      return errorResult;
     }
   });

@@ -25,10 +25,19 @@ export const [ChatProvider, useChat] = createContextHook(() => {
   const [isStreaming, setIsStreaming] = useState(false);
   const streamingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
-  const conversationsQuery = trpc.chat.getConversations.useQuery();
+  const conversationsQuery = trpc.chat.getConversations.useQuery(undefined, {
+    retry: 3,
+    retryDelay: 1000,
+    staleTime: 30000, // 30 seconds
+  });
   const messagesQuery = trpc.chat.getMessages.useQuery(
     { conversationId: currentConversationId! },
-    { enabled: !!currentConversationId }
+    { 
+      enabled: !!currentConversationId,
+      retry: 3,
+      retryDelay: 1000,
+      staleTime: 10000, // 10 seconds
+    }
   );
   const sendMessageMutation = trpc.chat.sendMessage.useMutation();
 
@@ -49,15 +58,18 @@ export const [ChatProvider, useChat] = createContextHook(() => {
 
   // Update messages when conversation changes
   useEffect(() => {
-    if (messagesQuery.data?.messages) {
+    if (messagesQuery.data?.messages && Array.isArray(messagesQuery.data.messages)) {
       console.log('Loading messages from backend:', messagesQuery.data.messages.length);
       setMessages(messagesQuery.data.messages);
-    } else if (currentConversationId && !messagesQuery.isLoading) {
+    } else if (currentConversationId && !messagesQuery.isLoading && !messagesQuery.error) {
       // If no messages found for this conversation, start with empty array
       console.log('No messages found for conversation:', currentConversationId);
       setMessages([]);
+    } else if (messagesQuery.error) {
+      console.error('Error loading messages:', messagesQuery.error);
+      setMessages([]);
     }
-  }, [messagesQuery.data, currentConversationId, messagesQuery.isLoading]);
+  }, [messagesQuery.data, currentConversationId, messagesQuery.isLoading, messagesQuery.error]);
 
   // Save current conversation to storage
   useEffect(() => {
@@ -439,11 +451,17 @@ export const [ChatProvider, useChat] = createContextHook(() => {
     // State
     currentConversationId,
     messages,
-    conversations: conversationsQuery.data?.conversations || [],
+    conversations: (conversationsQuery.data?.conversations && Array.isArray(conversationsQuery.data.conversations)) 
+      ? conversationsQuery.data.conversations 
+      : [],
     isLoading: conversationsQuery.isLoading || messagesQuery.isLoading,
     isSending,
     streamingMessage,
     isStreaming,
+    
+    // Error states
+    conversationsError: conversationsQuery.error,
+    messagesError: messagesQuery.error,
     
     // Enhanced state
     connectionStatus,
@@ -464,7 +482,9 @@ export const [ChatProvider, useChat] = createContextHook(() => {
     messages,
     conversationsQuery.data?.conversations,
     conversationsQuery.isLoading,
+    conversationsQuery.error,
     messagesQuery.isLoading,
+    messagesQuery.error,
     isSending,
     streamingMessage,
     isStreaming,

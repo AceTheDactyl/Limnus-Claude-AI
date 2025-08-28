@@ -443,9 +443,29 @@ export const sendMessageProcedure = publicProcedure
 // Helper function to get stored messages (used by get-messages route)
 export function getStoredMessages(conversationId: string) {
   try {
-    const messages = conversationMessages.get(conversationId) || [];
-    console.log(`getStoredMessages: Found ${messages.length} messages for conversation ${conversationId}`);
-    return messages;
+    if (!conversationId) {
+      console.log('getStoredMessages: No conversationId provided');
+      return [];
+    }
+    
+    const messages = conversationMessages.get(conversationId);
+    const result = messages || [];
+    console.log(`getStoredMessages: Found ${result.length} messages for conversation ${conversationId}`);
+    
+    // Ensure all messages have required properties
+    const validMessages = result.filter(msg => 
+      msg && 
+      typeof msg === 'object' && 
+      msg.role && 
+      msg.content && 
+      msg.timestamp
+    );
+    
+    if (validMessages.length !== result.length) {
+      console.warn(`getStoredMessages: Filtered out ${result.length - validMessages.length} invalid messages`);
+    }
+    
+    return validMessages;
   } catch (error) {
     console.error('Error getting stored messages:', error);
     return [];
@@ -457,7 +477,22 @@ export function getStoredConversations() {
   try {
     const conversationList = Array.from(conversations.values());
     console.log(`getStoredConversations: Found ${conversationList.length} conversations`);
-    return conversationList.sort((a, b) => b.timestamp - a.timestamp);
+    
+    // Ensure all conversations have required properties
+    const validConversations = conversationList.filter(conv => 
+      conv && 
+      typeof conv === 'object' && 
+      conv.id && 
+      conv.title && 
+      conv.lastMessage !== undefined && 
+      conv.timestamp
+    );
+    
+    if (validConversations.length !== conversationList.length) {
+      console.warn(`getStoredConversations: Filtered out ${conversationList.length - validConversations.length} invalid conversations`);
+    }
+    
+    return validConversations.sort((a, b) => b.timestamp - a.timestamp);
   } catch (error) {
     console.error('Error getting stored conversations:', error);
     return [];

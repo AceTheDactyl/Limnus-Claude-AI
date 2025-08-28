@@ -9,27 +9,33 @@ export const getConversationsProcedure = publicProcedure
       // Get conversations from storage
       const storedConversations = getStoredConversations();
       
-      console.log('Found stored conversations:', storedConversations.length);
+      console.log('Found stored conversations:', storedConversations?.length || 0);
       
       // Always return a valid structure, even if empty
       if (!storedConversations || storedConversations.length === 0) {
         console.log('No stored conversations found, returning empty array');
-        return {
+        const result = {
           conversations: [],
         };
+        console.log('Returning result:', result);
+        return result;
       }
       
       // Ensure conversations are properly sorted
       const sortedConversations = storedConversations.sort((a, b) => b.timestamp - a.timestamp);
       
-      return {
+      const result = {
         conversations: sortedConversations,
       };
+      console.log('Returning result with conversations:', result);
+      return result;
     } catch (error) {
       console.error('Error getting conversations:', error);
       // Always return a valid structure on error
-      return {
+      const errorResult = {
         conversations: [],
       };
+      console.log('Returning error result:', errorResult);
+      return errorResult;
     }
   });
