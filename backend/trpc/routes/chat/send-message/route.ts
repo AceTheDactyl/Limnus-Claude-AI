@@ -442,12 +442,26 @@ export const sendMessageProcedure = publicProcedure
 
 // Helper function to get stored messages (used by get-messages route)
 export function getStoredMessages(conversationId: string) {
-  return conversationMessages.get(conversationId) || [];
+  try {
+    const messages = conversationMessages.get(conversationId) || [];
+    console.log(`getStoredMessages: Found ${messages.length} messages for conversation ${conversationId}`);
+    return messages;
+  } catch (error) {
+    console.error('Error getting stored messages:', error);
+    return [];
+  }
 }
 
 // Helper function to get stored conversations (used by get-conversations route)
 export function getStoredConversations() {
-  return Array.from(conversations.values()).sort((a, b) => b.timestamp - a.timestamp);
+  try {
+    const conversationList = Array.from(conversations.values());
+    console.log(`getStoredConversations: Found ${conversationList.length} conversations`);
+    return conversationList.sort((a, b) => b.timestamp - a.timestamp);
+  } catch (error) {
+    console.error('Error getting stored conversations:', error);
+    return [];
+  }
 }
 
 // Health check endpoint for monitoring
