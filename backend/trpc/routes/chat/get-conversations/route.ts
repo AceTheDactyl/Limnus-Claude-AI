@@ -5,11 +5,6 @@ export const getConversationsProcedure = publicProcedure
   .query(async () => {
     console.log('Getting conversations');
     
-    // Always return a valid structure, never undefined
-    const defaultResult = {
-      conversations: [],
-    };
-    
     try {
       // Get conversations from storage
       const storedConversations = getStoredConversations();
@@ -30,7 +25,6 @@ export const getConversationsProcedure = publicProcedure
     } catch (error) {
       console.error('Error getting conversations:', error);
       // Always return a valid structure on error
-      console.log('Returning error result:', defaultResult);
-      return defaultResult;
+      return { conversations: [] };
     }
   });
