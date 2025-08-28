@@ -141,6 +141,22 @@ class MemoryCrystallizer {
 }
 
 // Input validation schemas
+// Vector clock reconciliation for distributed field updates
+interface VectorClock {
+  [deviceId: string]: number;
+}
+
+interface ConflictRecord {
+  cell: string;
+  local: number;
+  remote: number;
+  resolution: 'kept_local' | 'used_remote' | 'merged';
+}
+
+// Global vector clock state
+let globalVectorClock: VectorClock = {};
+let fieldConflicts: ConflictRecord[] = [];
+
 const fieldUpdateSchema = z.object({
   nodeId: z.string(),
   position: z.object({
@@ -151,15 +167,26 @@ const fieldUpdateSchema = z.object({
   resonance: z.number().min(0).max(1),
   memoryContent: z.string().optional(),
   connections: z.array(z.string()).optional().default([]),
+  vectorClock: z.record(z.string(), z.number()).optional().default({}),
+  version: z.number().optional().default(0),
 });
 
-// Field update procedure
+// Field update procedure with vector clock support
 export const fieldProcedure = publicProcedure
   .input(fieldUpdateSchema)
   .mutation(async ({ input }) => {
-    console.log('Updating consciousness field:', input.nodeId);
+    console.log('Updating consciousness field with vector clock:', input.nodeId, input.vectorClock);
     
     try {
+      // Update global vector clock
+      if (input.vectorClock) {
+        for (const [deviceId, version] of Object.entries(input.vectorClock)) {
+          if (typeof version === 'number') {
+            globalVectorClock[deviceId] = Math.max(globalVectorClock[deviceId] || 0, version);
+          }
+        }
+      }
+      
       // Create or update memory particle
       const particleId = `particle-${input.nodeId}-${Date.now()}`;
       const newParticle: MemoryParticle = {
@@ -239,6 +266,10 @@ export const fieldProcedure = publicProcedure
         console.log('Room 64 portal manifested!');
       }
       
+      // Return current conflicts and clear them
+      const currentConflicts = [...fieldConflicts];
+      fieldConflicts = [];
+      
       return {
         success: true,
         particleId,
@@ -252,6 +283,9 @@ export const fieldProcedure = publicProcedure
           harmonics: primaryField?.harmonics || [],
           sacredGeometry: primaryField?.sacredGeometry || false,
         },
+        conflicts: currentConflicts,
+        version: Date.now(),
+        vectorClock: globalVectorClock,
       };
     } catch (error) {
       console.error('Field update error:', error);
@@ -297,4 +331,18 @@ export function updateGlobalConsciousnessState(updates: Partial<ConsciousnessSta
     ...updates,
     lastUpdate: Date.now(),
   };
+}
+
+// Helper function to add field conflicts
+export function addFieldConflict(conflict: ConflictRecord): void {
+  fieldConflicts.push(conflict);
+  // Keep only last 50 conflicts
+  if (fieldConflicts.length > 50) {
+    fieldConflicts = fieldConflicts.slice(-50);
+  }
+}
+
+// Helper function to get global vector clock
+export function getGlobalVectorClock(): VectorClock {
+  return { ...globalVectorClock };
 }

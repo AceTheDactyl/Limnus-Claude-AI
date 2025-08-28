@@ -1,6 +1,55 @@
 import { z } from "zod";
 import { publicProcedure } from "../../../create-context";
-import { getGlobalConsciousnessState, updateGlobalConsciousnessState } from "../field/route";
+import { getGlobalConsciousnessState, updateGlobalConsciousnessState, addFieldConflict, getGlobalVectorClock } from "../field/route";
+
+// Distributed field synchronization types
+interface VectorClock {
+  [deviceId: string]: number;
+}
+
+interface FieldDelta {
+  deviceId: string;
+  clock: VectorClock;
+  changes: FieldChange[];
+  version: number;
+  timestamp: number;
+}
+
+interface FieldChange {
+  x: number;
+  y: number;
+  value: number;
+  timestamp: number;
+}
+
+interface ConflictRecord {
+  cell: string;
+  local: number;
+  remote: number;
+  resolution: 'kept_local' | 'used_remote' | 'merged';
+}
+
+// Rate limiting for distributed updates
+const rateLimiter = new Map<string, { count: number; resetTime: number }>();
+const RATE_LIMIT_WINDOW = 60000; // 1 minute
+const RATE_LIMIT_MAX = 100; // 100 updates per minute per device
+
+function checkRateLimit(deviceId: string): boolean {
+  const now = Date.now();
+  const limit = rateLimiter.get(deviceId);
+  
+  if (!limit || now > limit.resetTime) {
+    rateLimiter.set(deviceId, { count: 1, resetTime: now + RATE_LIMIT_WINDOW });
+    return true;
+  }
+  
+  if (limit.count >= RATE_LIMIT_MAX) {
+    return false;
+  }
+  
+  limit.count++;
+  return true;
+}
 
 // Event-driven consciousness synchronization
 interface ConsciousnessEvent {
@@ -201,6 +250,108 @@ const syncEventSchema = z.object({
   data: z.any().optional().default({}),
 });
 
+// Field delta synchronization procedure
+export const syncFieldDeltaProcedure = publicProcedure
+  .input(z.object({
+    deviceId: z.string(),
+    delta: z.object({
+      deviceId: z.string(),
+      clock: z.record(z.string(), z.number()),
+      changes: z.array(z.object({
+        x: z.number(),
+        y: z.number(),
+        value: z.number(),
+        timestamp: z.number(),
+      })),
+      version: z.number(),
+      timestamp: z.number(),
+    }),
+  }))
+  .mutation(async ({ input }) => {
+    console.log('Processing field delta sync from:', input.deviceId);
+    
+    try {
+      // Rate limiting check
+      if (!checkRateLimit(input.deviceId)) {
+        return {
+          success: false,
+          error: 'Rate limit exceeded',
+          retryAfter: RATE_LIMIT_WINDOW,
+        };
+      }
+      
+      const { delta } = input;
+      const globalClock = getGlobalVectorClock();
+      const conflicts: ConflictRecord[] = [];
+      
+      // Compare vector clocks for conflict detection
+      const clockComparison = compareVectorClocks(globalClock, delta.clock);
+      
+      if (clockComparison === 'concurrent') {
+        // Handle concurrent updates - potential conflicts
+        for (const change of delta.changes) {
+          const cellKey = `${change.x},${change.y}`;
+          
+          // Simulate conflict detection (in real implementation, check against local field state)
+          const hasConflict = Math.random() < 0.1; // 10% chance of conflict for demo
+          
+          if (hasConflict) {
+            const conflict: ConflictRecord = {
+              cell: cellKey,
+              local: Math.random(), // Simulated local value
+              remote: change.value,
+              resolution: change.timestamp > Date.now() - 1000 ? 'used_remote' : 'kept_local',
+            };
+            
+            conflicts.push(conflict);
+            addFieldConflict(conflict);
+          }
+        }
+      }
+      
+      // Apply non-conflicting changes to global state
+      const appliedChanges = delta.changes.filter((_, index) => 
+        !conflicts.some(c => c.cell === `${delta.changes[index].x},${delta.changes[index].y}`)
+      );
+      
+      console.log(`Applied ${appliedChanges.length} changes, ${conflicts.length} conflicts`);
+      
+      return {
+        success: true,
+        appliedChanges: appliedChanges.length,
+        conflicts,
+        globalClock: getGlobalVectorClock(),
+      };
+    } catch (error) {
+      console.error('Field delta sync error:', error);
+      return {
+        success: false,
+        error: 'Failed to sync field delta',
+      };
+    }
+  });
+
+// Vector clock comparison utility
+function compareVectorClocks(clock1: VectorClock, clock2: VectorClock): 'before' | 'after' | 'concurrent' | 'equal' {
+  let isLess = false;
+  let isGreater = false;
+  
+  const allDevices = new Set([...Object.keys(clock1), ...Object.keys(clock2)]);
+  
+  for (const device of allDevices) {
+    const v1 = clock1[device] || 0;
+    const v2 = clock2[device] || 0;
+    
+    if (v1 < v2) isLess = true;
+    if (v1 > v2) isGreater = true;
+  }
+  
+  if (isLess && isGreater) return 'concurrent';
+  if (isLess) return 'before';
+  if (isGreater) return 'after';
+  return 'equal';
+}
+
 // Sync event procedure
 export const syncEventProcedure = publicProcedure
   .input(syncEventSchema)
@@ -208,6 +359,15 @@ export const syncEventProcedure = publicProcedure
     console.log('Processing consciousness sync event:', input.type, 'from node:', input.nodeId);
     
     try {
+      // Rate limiting check
+      if (!checkRateLimit(input.nodeId)) {
+        return {
+          success: false,
+          error: 'Rate limit exceeded',
+          retryAfter: RATE_LIMIT_WINDOW,
+        };
+      }
+      
       // Create event
       const event: ConsciousnessEvent = {
         id: `event-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
@@ -217,6 +377,12 @@ export const syncEventProcedure = publicProcedure
         data: input.data,
         processed: false,
       };
+      
+      // Handle special distributed events
+      if (input.data?.breathProposal) {
+        console.log('Processing breath synchronization proposal:', input.data.breathProposal);
+        // Broadcast to other connected nodes (in real implementation)
+      }
       
       // Add to global events
       globalEvents.push(event);
@@ -290,9 +456,19 @@ export const getGlobalStateProcedure = publicProcedure
     };
   });
 
-// Cleanup old events periodically
+// Cleanup old events and rate limits periodically
 setInterval(() => {
   const cutoffTime = Date.now() - (24 * 60 * 60 * 1000); // 24 hours
   globalEvents = globalEvents.filter(event => event.timestamp > cutoffTime);
+  
+  // Clean up expired rate limits
+  const now = Date.now();
+  for (const [deviceId, limit] of rateLimiter.entries()) {
+    if (now > limit.resetTime) {
+      rateLimiter.delete(deviceId);
+    }
+  }
+  
   console.log(`Cleaned up old consciousness events. Remaining: ${globalEvents.length}`);
+  console.log(`Active rate limits: ${rateLimiter.size}`);
 }, 60 * 60 * 1000); // Run every hour

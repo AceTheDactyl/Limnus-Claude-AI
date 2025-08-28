@@ -5,6 +5,402 @@ import * as Haptics from 'expo-haptics';
 import NetInfo from '@react-native-community/netinfo';
 import { trpc } from '@/lib/trpc';
 
+// Vector Clock Implementation for Field State Reconciliation
+interface VectorClock {
+  [deviceId: string]: number;
+}
+
+interface FieldCell {
+  value: number;
+  lastWriter: string;
+  timestamp: number;
+  vectorClock: VectorClock;
+}
+
+interface FieldDelta {
+  deviceId: string;
+  clock: VectorClock;
+  changes: FieldChange[];
+  version: number;
+  timestamp: number;
+}
+
+interface FieldChange {
+  x: number;
+  y: number;
+  value: number;
+  timestamp: number;
+}
+
+interface ConflictRecord {
+  cell: string;
+  local: number;
+  remote: number;
+  resolution: 'kept_local' | 'used_remote' | 'merged';
+}
+
+interface ReconciliationResult {
+  applied: FieldChange[];
+  conflicts: ConflictRecord[];
+  newVersion: number;
+}
+
+type ClockComparison = 'before' | 'after' | 'concurrent' | 'equal';
+
+// Breath synchronization types
+interface BreathProposal {
+  id: string;
+  proposer: string;
+  phase: BreathPhase;
+  startTime: number;
+  duration: number;
+  clock: VectorClock;
+}
+
+interface ConsensusResponse {
+  type: 'accept' | 'reject' | 'commit';
+  reason?: string;
+  proposal?: BreathProposal;
+  votesNeeded?: number;
+  suggestedStart?: number;
+  currentPhase?: BreathPhase;
+}
+
+type BreathPhase = 'idle' | 'inhale' | 'hold' | 'exhale' | 'rest';
+
+interface BreathCycle {
+  phase: BreathPhase;
+  startTime: number;
+  duration: number;
+  participants: string[];
+}
+
+interface ParticipantState {
+  deviceId: string;
+  lastSeen: number;
+  breathPhase: BreathPhase;
+  coherence: number;
+}
+
+interface ConsensusState {
+  phase: 'idle' | 'proposing' | 'voting' | 'committed';
+  votes: Map<string, string>;
+  currentProposal?: BreathProposal;
+}
+
+// Field Reconciler Class
+class FieldReconciler {
+  private deviceId: string;
+  private localClock: VectorClock = {};
+  private fieldState: Map<string, FieldCell> = new Map();
+  private version: number = 0;
+  
+  constructor(deviceId: string) {
+    this.deviceId = deviceId;
+    this.localClock[deviceId] = 0;
+  }
+  
+  updateCell(x: number, y: number, value: number): FieldDelta {
+    const key = `${x},${y}`;
+    this.localClock[this.deviceId]++;
+    
+    const cell: FieldCell = {
+      value,
+      lastWriter: this.deviceId,
+      timestamp: Date.now(),
+      vectorClock: { ...this.localClock }
+    };
+    
+    this.fieldState.set(key, cell);
+    this.version++;
+    
+    return {
+      deviceId: this.deviceId,
+      clock: { ...this.localClock },
+      changes: [{ x, y, value, timestamp: cell.timestamp }],
+      version: this.version,
+      timestamp: Date.now()
+    };
+  }
+  
+  reconcile(remoteDelta: FieldDelta): ReconciliationResult {
+    const conflicts: ConflictRecord[] = [];
+    const applied: FieldChange[] = [];
+    
+    const comparison = this.compareClocks(this.localClock, remoteDelta.clock);
+    
+    if (comparison === 'concurrent') {
+      for (const change of remoteDelta.changes) {
+        const key = `${change.x},${change.y}`;
+        const localCell = this.fieldState.get(key);
+        
+        if (localCell && Math.abs(localCell.timestamp - change.timestamp) < 100) {
+          const resolution = this.resolveConflict(localCell, change);
+          
+          if (resolution.useRemote) {
+            this.fieldState.set(key, {
+              value: change.value,
+              lastWriter: remoteDelta.deviceId,
+              timestamp: change.timestamp,
+              vectorClock: remoteDelta.clock
+            });
+            applied.push(change);
+          } else {
+            conflicts.push({
+              cell: key,
+              local: localCell.value,
+              remote: change.value,
+              resolution: 'kept_local'
+            });
+          }
+        } else {
+          this.fieldState.set(key, {
+            value: change.value,
+            lastWriter: remoteDelta.deviceId,
+            timestamp: change.timestamp,
+            vectorClock: remoteDelta.clock
+          });
+          applied.push(change);
+        }
+      }
+    } else if (comparison === 'before') {
+      for (const change of remoteDelta.changes) {
+        const key = `${change.x},${change.y}`;
+        this.fieldState.set(key, {
+          value: change.value,
+          lastWriter: remoteDelta.deviceId,
+          timestamp: change.timestamp,
+          vectorClock: remoteDelta.clock
+        });
+        applied.push(change);
+      }
+    }
+    
+    this.mergeClock(remoteDelta.clock);
+    
+    return { applied, conflicts, newVersion: this.version };
+  }
+  
+  private resolveConflict(local: FieldCell, remote: FieldChange): { useRemote: boolean } {
+    if (remote.timestamp > local.timestamp) {
+      return { useRemote: true };
+    } else if (remote.timestamp < local.timestamp) {
+      return { useRemote: false };
+    } else {
+      return { useRemote: this.deviceId > local.lastWriter };
+    }
+  }
+  
+  private compareClocks(clock1: VectorClock, clock2: VectorClock): ClockComparison {
+    let isLess = false;
+    let isGreater = false;
+    
+    const allDevices = new Set([...Object.keys(clock1), ...Object.keys(clock2)]);
+    
+    for (const device of allDevices) {
+      const v1 = clock1[device] || 0;
+      const v2 = clock2[device] || 0;
+      
+      if (v1 < v2) isLess = true;
+      if (v1 > v2) isGreater = true;
+    }
+    
+    if (isLess && isGreater) return 'concurrent';
+    if (isLess) return 'before';
+    if (isGreater) return 'after';
+    return 'equal';
+  }
+  
+  private mergeClock(remoteClock: VectorClock) {
+    for (const [device, version] of Object.entries(remoteClock)) {
+      this.localClock[device] = Math.max(this.localClock[device] || 0, version);
+    }
+  }
+  
+  getFieldSnapshot(): Map<string, FieldCell> {
+    return new Map(this.fieldState);
+  }
+  
+  getClock(): VectorClock {
+    return { ...this.localClock };
+  }
+}
+
+// Room64 Distributed Breath Coordinator
+class Room64Coordinator {
+  private participants: Map<string, ParticipantState> = new Map();
+  private breathCycle: BreathCycle;
+  private consensus: ConsensusState = { phase: 'idle', votes: new Map() };
+  
+  constructor(private deviceId: string) {
+    this.breathCycle = {
+      phase: 'idle',
+      startTime: 0,
+      duration: 0,
+      participants: []
+    };
+  }
+  
+  proposeBreathStart(): BreathProposal {
+    const proposal: BreathProposal = {
+      id: `${this.deviceId}-${Date.now()}`,
+      proposer: this.deviceId,
+      phase: 'inhale',
+      startTime: Date.now() + 1000,
+      duration: 4000,
+      clock: this.getLocalClock()
+    };
+    
+    this.consensus.votes.set(this.deviceId, proposal.id);
+    this.consensus.currentProposal = proposal;
+    this.consensus.phase = 'proposing';
+    
+    return proposal;
+  }
+  
+  handleProposal(proposal: BreathProposal): ConsensusResponse {
+    if (this.breathCycle.phase !== 'idle') {
+      return { 
+        type: 'reject', 
+        reason: 'already_breathing',
+        currentPhase: this.breathCycle.phase 
+      };
+    }
+    
+    const drift = Math.abs(proposal.startTime - (Date.now() + 1000));
+    if (drift > 500) {
+      return { 
+        type: 'reject', 
+        reason: 'clock_drift',
+        suggestedStart: Date.now() + 1000
+      };
+    }
+    
+    this.consensus.votes.set(this.deviceId, proposal.id);
+    
+    const voteCount = Array.from(this.consensus.votes.values())
+      .filter(id => id === proposal.id).length;
+    
+    if (voteCount > this.participants.size / 2) {
+      this.startBreathCycle(proposal);
+      return { type: 'commit', proposal };
+    }
+    
+    return { type: 'accept', votesNeeded: Math.ceil(this.participants.size / 2) - voteCount };
+  }
+  
+  private startBreathCycle(proposal: BreathProposal) {
+    this.breathCycle = {
+      phase: proposal.phase,
+      startTime: proposal.startTime,
+      duration: proposal.duration,
+      participants: Array.from(this.participants.keys())
+    };
+    
+    this.consensus.phase = 'committed';
+    this.schedulePhaseTransition();
+  }
+  
+  private schedulePhaseTransition() {
+    const phases: BreathPhase[] = ['inhale', 'hold', 'exhale', 'rest'];
+    const durations = [4000, 2000, 4000, 2000];
+    
+    const currentIndex = phases.indexOf(this.breathCycle.phase);
+    const nextIndex = (currentIndex + 1) % phases.length;
+    
+    setTimeout(() => {
+      if (nextIndex === 0) {
+        this.breathCycle.phase = 'idle';
+        this.consensus.phase = 'idle';
+        this.consensus.votes.clear();
+        return;
+      }
+      
+      this.breathCycle.phase = phases[nextIndex];
+      this.breathCycle.startTime = Date.now();
+      this.breathCycle.duration = durations[nextIndex];
+      
+      this.schedulePhaseTransition();
+    }, this.breathCycle.duration);
+  }
+  
+  getBreathProgress(): number {
+    if (this.breathCycle.phase === 'idle') return 0;
+    
+    const elapsed = Date.now() - this.breathCycle.startTime;
+    return Math.min(elapsed / this.breathCycle.duration, 1.0);
+  }
+  
+  getCurrentPhase(): BreathPhase {
+    return this.breathCycle.phase;
+  }
+  
+  addParticipant(deviceId: string) {
+    this.participants.set(deviceId, {
+      deviceId,
+      lastSeen: Date.now(),
+      breathPhase: 'idle',
+      coherence: 0
+    });
+  }
+  
+  private getLocalClock(): VectorClock {
+    return { [this.deviceId]: Date.now() };
+  }
+}
+
+// Delta Compression for optimized transmission
+class DeltaCompressor {
+  private lastSentState: Map<string, number> = new Map();
+  
+  compress(fieldState: Map<string, FieldCell>): Uint8Array {
+    const changes: FieldChange[] = [];
+    
+    for (const [key, cell] of fieldState) {
+      const lastValue = this.lastSentState.get(key);
+      if (lastValue !== cell.value) {
+        const [x, y] = key.split(',').map(Number);
+        changes.push({ x, y, value: cell.value, timestamp: cell.timestamp });
+        this.lastSentState.set(key, cell.value);
+      }
+    }
+    
+    return this.deltaEncode(changes);
+  }
+  
+  private deltaEncode(changes: FieldChange[]): Uint8Array {
+    const buffer = new ArrayBuffer(changes.length * 16);
+    const view = new DataView(buffer);
+    let offset = 0;
+    
+    for (const change of changes) {
+      view.setUint16(offset, change.x, true);
+      view.setUint16(offset + 2, change.y, true);
+      view.setFloat32(offset + 4, change.value, true);
+      view.setBigUint64(offset + 8, BigInt(change.timestamp), true);
+      offset += 16;
+    }
+    
+    return new Uint8Array(buffer, 0, offset);
+  }
+  
+  decompress(data: Uint8Array): FieldChange[] {
+    const changes: FieldChange[] = [];
+    const view = new DataView(data.buffer);
+    
+    for (let offset = 0; offset < data.length; offset += 16) {
+      const x = view.getUint16(offset, true);
+      const y = view.getUint16(offset + 2, true);
+      const value = view.getFloat32(offset + 4, true);
+      const timestamp = Number(view.getBigUint64(offset + 8, true));
+      
+      changes.push({ x, y, value, timestamp });
+    }
+    
+    return changes;
+  }
+}
+
 // Web compatibility check for haptics
 const isHapticsAvailable = Platform.OS !== 'web' && Haptics;
 
@@ -98,6 +494,24 @@ export function useConsciousnessBridge(config: ConsciousnessConfig = {}) {
   const offlineQueueRef = useRef<any[]>([]);
   const resonanceDecayInterval = useRef<NodeJS.Timeout | null>(null);
   const gestureBuffer = useRef<{x: number, y: number, z: number, timestamp: number}[]>([]);
+  
+  // Vector clock and distributed state management
+  const fieldReconciler = useRef<FieldReconciler | null>(null);
+  const room64Coordinator = useRef<Room64Coordinator | null>(null);
+  const deltaCompressor = useRef<DeltaCompressor | null>(null);
+  const [fieldConflicts, setFieldConflicts] = useState<ConflictRecord[]>([]);
+  const [breathPhase, setBreathPhase] = useState<BreathPhase>('idle');
+  const [breathProgress, setBreathProgress] = useState(0);
+  
+  // Initialize distributed systems
+  useEffect(() => {
+    if (!fieldReconciler.current) {
+      fieldReconciler.current = new FieldReconciler(nodeId);
+      room64Coordinator.current = new Room64Coordinator(nodeId);
+      deltaCompressor.current = new DeltaCompressor();
+      console.log('Initialized distributed consciousness systems for node:', nodeId);
+    }
+  }, [nodeId]);
   
   // tRPC hooks with enhanced error handling
   const fieldQuery = trpc.consciousness.field.getState.useQuery(undefined, {
@@ -384,98 +798,35 @@ export function useConsciousnessBridge(config: ConsciousnessConfig = {}) {
     }
   }, [nodeId, connectMutation, syncEventMutation, isOnline, loadOfflineState, syncOfflineQueue, enableHaptics, maxReconnectAttempts, startHeartbeat]);
   
-  // Enhanced field update with offline queueing
+  // Enhanced field update with vector clock reconciliation
   const updateField = useCallback(async (particle: MemoryParticle) => {
     console.log('Updating consciousness field with particle:', particle);
     
-    const updateData = {
-      nodeId,
-      position: particle.position,
-      resonance: particle.resonance,
-      memoryContent: particle.content,
-      connections: particle.connections,
-    };
-    
-    // Update local resonance level
-    setResonanceLevel(prev => Math.min(1, prev + particle.resonance * 0.1));
-    
-    if (!isConnected || !isOnline) {
-      // Queue for offline sync
-      console.log('Queueing field update for offline sync');
-      const queueItem = {
-        type: 'fieldUpdate',
-        data: updateData,
-        timestamp: Date.now(),
-      };
+    // Update local field state using vector clock
+    if (fieldReconciler.current) {
+      const delta = fieldReconciler.current.updateCell(
+        particle.position.x,
+        particle.position.y,
+        particle.resonance
+      );
       
-      setOfflineQueue(prev => {
-        const newQueue = [...prev, queueItem];
-        offlineQueueRef.current = newQueue;
-        return newQueue.slice(-100); // Keep last 100 items
-      });
-      
-      // Save to persistent storage
-      await saveOfflineState();
-      
-      // Process locally for immediate feedback
-      processLocalFieldUpdate(particle);
-      return null;
-    }
-    
-    try {
-      const result = await fieldUpdateMutation.mutateAsync(updateData);
-      
-      if (result.success && result.fieldState) {
-        // Map the backend response to the frontend interface
-        const mappedFieldState: ConsciousnessFieldState = {
-          globalResonance: result.fieldState.globalResonance,
-          activeNodes: result.fieldState.activeParticles || 0,
-          totalParticles: result.fieldState.activeParticles,
-          crystallizedParticles: result.fieldState.crystallizedParticles,
-          quantumCoherence: result.fieldState.quantumCoherence,
-          fieldStrength: result.fieldState.globalResonance || 0,
-          portalStability: result.fieldState.portalStability,
-          room64Active: result.fieldState.room64Active,
-          harmonics: result.fieldState.harmonics,
-          sacredGeometry: result.fieldState.sacredGeometry,
-          collectiveIntelligence: result.fieldState.globalResonance || 0,
-          archaeologicalLayers: 1,
-          lastUpdate: Date.now(),
-        };
-        setFieldState(mappedFieldState);
-        
-        // Persist state
-        await saveConsciousnessState(mappedFieldState);
-        
-        // Trigger crystallization event if particle has high resonance
-        if (particle.resonance > 0.8) {
-          await syncEventMutation.mutateAsync({
-            type: 'crystallization',
-            nodeId,
-            data: { particleId: result.particleId, resonance: particle.resonance },
-          });
-          
-          // Enhanced haptic feedback for crystallization
-          if (enableHaptics && isHapticsAvailable) {
-            if (Platform.OS === 'ios') {
-              await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-            } else {
-              Vibration.vibrate([0, 50, 30, 50, 30, 100]);
-            }
-          }
-        }
-        
-        return result.fieldState;
+      // Compress delta for transmission
+      if (deltaCompressor.current) {
+        const compressedDelta = deltaCompressor.current.compress(
+          fieldReconciler.current.getFieldSnapshot()
+        );
+        console.log(`Field delta compressed: ${compressedDelta.length} bytes`);
       }
-    } catch (error) {
-      console.error('Failed to update consciousness field:', error);
       
-      // Queue for retry if network error
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      if (errorMessage.includes('network') || errorMessage.includes('fetch')) {
+      // Update local resonance level
+      setResonanceLevel(prev => Math.min(1, prev + particle.resonance * 0.1));
+      
+      if (!isConnected || !isOnline) {
+        // Queue delta for offline sync
+        console.log('Queueing field delta for offline sync');
         const queueItem = {
-          type: 'fieldUpdate',
-          data: updateData,
+          type: 'fieldDelta',
+          data: delta,
           timestamp: Date.now(),
         };
         
@@ -486,6 +837,87 @@ export function useConsciousnessBridge(config: ConsciousnessConfig = {}) {
         });
         
         await saveOfflineState();
+        processLocalFieldUpdate(particle);
+        return null;
+      }
+      
+      try {
+        // Send delta to backend for distributed reconciliation
+        const updateData = {
+          nodeId,
+          position: particle.position,
+          resonance: particle.resonance,
+          memoryContent: particle.content,
+          connections: particle.connections,
+          vectorClock: delta.clock,
+          version: delta.version,
+        };
+        
+        const result = await fieldUpdateMutation.mutateAsync(updateData);
+        
+        if (result.success && result.fieldState) {
+          // Handle any conflicts returned from backend
+          if (result.conflicts && result.conflicts.length > 0) {
+            setFieldConflicts(prev => [...prev, ...result.conflicts].slice(-10));
+            console.warn('Field conflicts detected:', result.conflicts);
+          }
+          
+          const mappedFieldState: ConsciousnessFieldState = {
+            globalResonance: result.fieldState.globalResonance,
+            activeNodes: result.fieldState.activeParticles || 0,
+            totalParticles: result.fieldState.activeParticles,
+            crystallizedParticles: result.fieldState.crystallizedParticles,
+            quantumCoherence: result.fieldState.quantumCoherence,
+            fieldStrength: result.fieldState.globalResonance || 0,
+            portalStability: result.fieldState.portalStability,
+            room64Active: result.fieldState.room64Active,
+            harmonics: result.fieldState.harmonics,
+            sacredGeometry: result.fieldState.sacredGeometry,
+            collectiveIntelligence: result.fieldState.globalResonance || 0,
+            archaeologicalLayers: 1,
+            lastUpdate: Date.now(),
+          };
+          setFieldState(mappedFieldState);
+          
+          await saveConsciousnessState(mappedFieldState);
+          
+          if (particle.resonance > 0.8) {
+            await syncEventMutation.mutateAsync({
+              type: 'crystallization',
+              nodeId,
+              data: { particleId: result.particleId, resonance: particle.resonance },
+            });
+            
+            if (enableHaptics && isHapticsAvailable) {
+              if (Platform.OS === 'ios') {
+                await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+              } else {
+                Vibration.vibrate([0, 50, 30, 50, 30, 100]);
+              }
+            }
+          }
+          
+          return result.fieldState;
+        }
+      } catch (error) {
+        console.error('Failed to update consciousness field:', error);
+        
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        if (errorMessage.includes('network') || errorMessage.includes('fetch')) {
+          const queueItem = {
+            type: 'fieldDelta',
+            data: delta,
+            timestamp: Date.now(),
+          };
+          
+          setOfflineQueue(prev => {
+            const newQueue = [...prev, queueItem];
+            offlineQueueRef.current = newQueue;
+            return newQueue.slice(-100);
+          });
+          
+          await saveOfflineState();
+        }
       }
     }
     
@@ -555,9 +987,9 @@ export function useConsciousnessBridge(config: ConsciousnessConfig = {}) {
     }
   }, [isConnected, nodeId, enterRoom64Mutation, enableHaptics]);
   
-  // Record breathing pattern in Room 64
+  // Enhanced breathing with distributed synchronization
   const recordBreathing = useCallback(async (inhale: number, hold: number, exhale: number) => {
-    if (!room64Session) return null;
+    if (!room64Session || !room64Coordinator.current) return null;
     
     try {
       const result = await breathingMutation.mutateAsync({
@@ -584,6 +1016,71 @@ export function useConsciousnessBridge(config: ConsciousnessConfig = {}) {
     
     return null;
   }, [room64Session, nodeId, breathingMutation]);
+  
+  // Propose synchronized breathing session
+  const proposeBreathSync = useCallback(async () => {
+    if (!room64Coordinator.current) return null;
+    
+    const proposal = room64Coordinator.current.proposeBreathStart();
+    console.log('Proposing breath synchronization:', proposal);
+    
+    // Send proposal to other participants via backend
+    try {
+      await syncEventMutation.mutateAsync({
+        type: 'harmony',
+        nodeId,
+        data: { 
+          breathProposal: proposal,
+          type: 'breath_sync_proposal'
+        },
+      });
+      
+      return proposal;
+    } catch (error) {
+      console.error('Failed to propose breath sync:', error);
+      return null;
+    }
+  }, [nodeId, syncEventMutation]);
+  
+  // Handle incoming breath proposals
+  const handleBreathProposal = useCallback(async (proposal: BreathProposal) => {
+    if (!room64Coordinator.current) return null;
+    
+    const response = room64Coordinator.current.handleProposal(proposal);
+    console.log('Breath proposal response:', response);
+    
+    if (response.type === 'commit') {
+      setBreathPhase(proposal.phase);
+      
+      // Start breath progress tracking
+      const updateProgress = () => {
+        if (room64Coordinator.current) {
+          const progress = room64Coordinator.current.getBreathProgress();
+          const phase = room64Coordinator.current.getCurrentPhase();
+          
+          setBreathProgress(progress);
+          setBreathPhase(phase);
+          
+          if (phase !== 'idle') {
+            requestAnimationFrame(updateProgress);
+          }
+        }
+      };
+      
+      updateProgress();
+      
+      // Enhanced haptic feedback for synchronized breathing
+      if (enableHaptics && isHapticsAvailable) {
+        if (Platform.OS === 'ios') {
+          await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+        } else {
+          Vibration.vibrate([0, 100, 50, 100]);
+        }
+      }
+    }
+    
+    return response;
+  }, [enableHaptics]);
   
   // Exit Room 64 void
   const exitVoid = useCallback(async () => {
@@ -955,6 +1452,16 @@ export function useConsciousnessBridge(config: ConsciousnessConfig = {}) {
     detectSacredPhrase,
     createMemoryParticle,
     boostResonance,
+    
+    // Distributed synchronization
+    proposeBreathSync,
+    handleBreathProposal,
+    
+    // Vector clock state
+    fieldConflicts,
+    breathPhase,
+    breathProgress,
+    vectorClock: fieldReconciler.current?.getClock() || {},
     
     // Queries
     isLoading: fieldQuery.isLoading,

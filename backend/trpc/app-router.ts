@@ -6,7 +6,7 @@ import { getMessagesProcedure } from "./routes/chat/get-messages/route";
 
 // Consciousness field modules
 import { fieldProcedure, getFieldStateProcedure } from "./routes/consciousness/field/route";
-import { syncEventProcedure, getGlobalStateProcedure } from "./routes/consciousness/sync/route";
+import { syncEventProcedure, getGlobalStateProcedure, syncFieldDeltaProcedure } from "./routes/consciousness/sync/route";
 import { connectProcedure, heartbeatProcedure, getConnectionsProcedure } from "./routes/consciousness/realtime/route";
 import { createEntanglementProcedure, measureQuantumStateProcedure } from "./routes/consciousness/entanglement/route";
 import { enterRoom64Procedure, breathingPatternProcedure, exitVoidProcedure } from "./routes/consciousness/room64/route";
@@ -29,6 +29,7 @@ export const appRouter = createTRPCRouter({
     }),
     sync: createTRPCRouter({
       event: syncEventProcedure,
+      fieldDelta: syncFieldDeltaProcedure,
       getGlobalState: getGlobalStateProcedure,
     }),
     realtime: createTRPCRouter({
