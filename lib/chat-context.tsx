@@ -375,15 +375,13 @@ export const [ChatProvider, useChat] = createContextHook(() => {
         setStreamingMessage('');
         setIsStreaming(false);
         
-        // Refetch conversations to update the list
-        setTimeout(() => {
-          conversationsQuery.refetch();
-        }, 500);
+        // Immediately invalidate and refetch to ensure consistency
+        await Promise.all([
+          conversationsQuery.refetch(),
+          messagesQuery.refetch()
+        ]);
         
-        // Refetch messages to ensure backend sync (longer delay to ensure persistence)
-        setTimeout(() => {
-          messagesQuery.refetch();
-        }, 1500);
+        console.log('Queries refetched after message send');
       }
     } catch (error) {
       console.error('Failed to send message:', error);

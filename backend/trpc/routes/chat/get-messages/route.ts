@@ -17,6 +17,13 @@ export const getMessagesProcedure = publicProcedure
     const storedMessages = getStoredMessages(conversationId);
     
     console.log('Found stored messages:', storedMessages.length);
+    if (storedMessages.length > 0) {
+      console.log('Message details:', storedMessages.map(m => ({ 
+        role: m.role, 
+        content: m.content.substring(0, 50) + '...', 
+        timestamp: m.timestamp 
+      })));
+    }
     
     // Fallback to mock messages for existing conversations if no stored messages
     if (storedMessages.length === 0) {

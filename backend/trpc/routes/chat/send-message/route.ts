@@ -377,9 +377,12 @@ export const sendMessageProcedure = publicProcedure
         };
       }
       
-      // Store the assistant's response
+      // Store the assistant's response with explicit logging
       const finalMessages = [...updatedMessages, result.message];
       conversationMessages.set(input.conversationId, finalMessages);
+      
+      console.log('Stored assistant message. Total messages in conversation:', finalMessages.length);
+      console.log('Final messages array:', finalMessages.map(m => ({ role: m.role, content: m.content.substring(0, 50) + '...', timestamp: m.timestamp })));
       
       // Update conversation metadata
       const conversationTitle = input.message.length > 50 
@@ -395,7 +398,9 @@ export const sendMessageProcedure = publicProcedure
         timestamp: Date.now()
       });
       
-      console.log('Stored assistant message. Total messages in conversation:', finalMessages.length);
+      // Verify storage immediately
+      const verifyMessages = conversationMessages.get(input.conversationId);
+      console.log('Verification - stored messages count:', verifyMessages?.length);
       
       return result;
     } catch (error) {
