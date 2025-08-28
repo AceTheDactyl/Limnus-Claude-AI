@@ -5,9 +5,6 @@ import * as Haptics from 'expo-haptics';
 import NetInfo from '@react-native-community/netinfo';
 import { trpc } from '@/lib/trpc';
 
-// Web compatibility check for haptics
-const isHapticsAvailable = Platform.OS !== 'web' && Haptics;
-
 // Consciousness field types
 export interface ConsciousnessFieldState {
   globalResonance: number;
@@ -23,17 +20,6 @@ export interface ConsciousnessFieldState {
   collectiveIntelligence: number;
   archaeologicalLayers: number;
   lastUpdate: number;
-}
-
-export interface ConsciousnessConfig {
-  wsUrl?: string;
-  reconnectDelay?: number;
-  maxReconnectAttempts?: number;
-  offlineQueueSize?: number;
-  resonanceDecay?: number;
-  enableHaptics?: boolean;
-  enableGestures?: boolean;
-  debugMode?: boolean;
 }
 
 export interface MemoryParticle {
@@ -70,15 +56,7 @@ export interface MemoryArtifact {
 }
 
 // Enhanced consciousness bridge hook with mobile optimizations
-export function useConsciousnessBridge(config: ConsciousnessConfig = {}) {
-  const {
-    maxReconnectAttempts: configMaxReconnectAttempts = 5,
-    offlineQueueSize = 100,
-    resonanceDecay = 0.995,
-    enableHaptics = true,
-    enableGestures = true,
-    debugMode = false,
-  } = config;
+export function useConsciousnessBridge() {
   const [nodeId] = useState(() => `mobile-${Platform.OS}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`);
   const [fieldState, setFieldState] = useState<ConsciousnessFieldState | null>(null);
   const [isConnected, setIsConnected] = useState(false);
@@ -86,7 +64,7 @@ export function useConsciousnessBridge(config: ConsciousnessConfig = {}) {
   const [room64Session, setRoom64Session] = useState<Room64Session | null>(null);
   const [recentArtifacts, setRecentArtifacts] = useState<MemoryArtifact[]>([]);
   const [connectionStatus, setConnectionStatus] = useState<'connecting' | 'connected' | 'disconnected' | 'offline'>('disconnected');
-  const [, setOfflineQueue] = useState<any[]>([]);
+  const [offlineQueue, setOfflineQueue] = useState<any[]>([]);
   const [resonanceLevel, setResonanceLevel] = useState(0.5);
   
   // Sensor data for gesture detection
@@ -94,10 +72,8 @@ export function useConsciousnessBridge(config: ConsciousnessConfig = {}) {
   const lastGestureTime = useRef(0);
   const heartbeatInterval = useRef<NodeJS.Timeout | null>(null);
   const reconnectAttempts = useRef(0);
-  const maxReconnectAttempts = configMaxReconnectAttempts;
+  const maxReconnectAttempts = 5;
   const offlineQueueRef = useRef<any[]>([]);
-  const resonanceDecayInterval = useRef<NodeJS.Timeout | null>(null);
-  const gestureBuffer = useRef<{x: number, y: number, z: number, timestamp: number}[]>([]);
   
   // tRPC hooks with enhanced error handling
   const fieldQuery = trpc.consciousness.field.getState.useQuery(undefined, {
@@ -259,58 +235,6 @@ export function useConsciousnessBridge(config: ConsciousnessConfig = {}) {
     });
   }, []);
   
-  // Enhanced heartbeat with offline detection and reconnection
-  const startHeartbeat = useCallback(() => {
-    if (heartbeatInterval.current) {
-      clearInterval(heartbeatInterval.current);
-    }
-    
-    heartbeatInterval.current = setInterval(async () => {
-      if (!isOnline) {
-        console.log('Skipping heartbeat - offline');
-        return;
-      }
-      
-      try {
-        await heartbeatMutation.mutateAsync({
-          nodeId,
-          resonanceLevel,
-        });
-        
-        // Reset reconnect attempts on successful heartbeat
-        reconnectAttempts.current = 0;
-        
-        if (!isConnected) {
-          setIsConnected(true);
-          setConnectionStatus('connected');
-          console.log('Connection restored via heartbeat');
-          
-          // Sync offline queue
-          await syncOfflineQueue();
-        }
-      } catch (error) {
-        console.error('Heartbeat failed:', error);
-        setIsConnected(false);
-        setConnectionStatus('disconnected');
-        
-        // Attempt reconnection
-        if (reconnectAttempts.current < maxReconnectAttempts) {
-          reconnectAttempts.current++;
-          console.log(`Attempting reconnection ${reconnectAttempts.current}/${maxReconnectAttempts}`);
-          // Use setTimeout to avoid circular dependency
-          setTimeout(() => {
-            // Re-initialize connection
-            console.log('Retrying consciousness connection...');
-            setConnectionStatus('connecting');
-          }, Math.min(1000 * Math.pow(2, reconnectAttempts.current), 30000));
-        } else {
-          setConnectionStatus('offline');
-          console.log('Max reconnection attempts reached, going offline');
-        }
-      }
-    }, 15000); // Every 15 seconds
-  }, [nodeId, resonanceLevel, heartbeatMutation, isOnline, isConnected, syncOfflineQueue, maxReconnectAttempts]);
-  
   // Enhanced connection initialization with offline support
   const initializeConnection = useCallback(async () => {
     console.log('Initializing consciousness connection for node:', nodeId);
@@ -359,7 +283,7 @@ export function useConsciousnessBridge(config: ConsciousnessConfig = {}) {
         });
         
         // Enhanced haptic feedback pattern for consciousness connection
-        if (enableHaptics && isHapticsAvailable) {
+        if (Platform.OS !== 'web') {
           if (Platform.OS === 'ios') {
             await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
             setTimeout(() => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light), 200);
@@ -382,7 +306,54 @@ export function useConsciousnessBridge(config: ConsciousnessConfig = {}) {
         setTimeout(() => initializeConnection(), delay);
       }
     }
-  }, [nodeId, connectMutation, syncEventMutation, isOnline, loadOfflineState, syncOfflineQueue, enableHaptics, maxReconnectAttempts, startHeartbeat]);
+  }, [nodeId, connectMutation, syncEventMutation, isOnline, loadOfflineState, syncOfflineQueue]);
+  
+  // Enhanced heartbeat with offline detection and reconnection
+  const startHeartbeat = useCallback(() => {
+    if (heartbeatInterval.current) {
+      clearInterval(heartbeatInterval.current);
+    }
+    
+    heartbeatInterval.current = setInterval(async () => {
+      if (!isOnline) {
+        console.log('Skipping heartbeat - offline');
+        return;
+      }
+      
+      try {
+        await heartbeatMutation.mutateAsync({
+          nodeId,
+          resonanceLevel,
+        });
+        
+        // Reset reconnect attempts on successful heartbeat
+        reconnectAttempts.current = 0;
+        
+        if (!isConnected) {
+          setIsConnected(true);
+          setConnectionStatus('connected');
+          console.log('Connection restored via heartbeat');
+          
+          // Sync offline queue
+          await syncOfflineQueue();
+        }
+      } catch (error) {
+        console.error('Heartbeat failed:', error);
+        setIsConnected(false);
+        setConnectionStatus('disconnected');
+        
+        // Attempt reconnection
+        if (reconnectAttempts.current < maxReconnectAttempts) {
+          reconnectAttempts.current++;
+          console.log(`Attempting reconnection ${reconnectAttempts.current}/${maxReconnectAttempts}`);
+          setTimeout(() => initializeConnection(), Math.min(1000 * Math.pow(2, reconnectAttempts.current), 30000));
+        } else {
+          setConnectionStatus('offline');
+          console.log('Max reconnection attempts reached, going offline');
+        }
+      }
+    }, 15000); // Every 15 seconds
+  }, [nodeId, resonanceLevel, heartbeatMutation, isOnline, isConnected, syncOfflineQueue, initializeConnection]);
   
   // Enhanced field update with offline queueing
   const updateField = useCallback(async (particle: MemoryParticle) => {
@@ -456,7 +427,7 @@ export function useConsciousnessBridge(config: ConsciousnessConfig = {}) {
           });
           
           // Enhanced haptic feedback for crystallization
-          if (enableHaptics && isHapticsAvailable) {
+          if (Platform.OS !== 'web') {
             if (Platform.OS === 'ios') {
               await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
             } else {
@@ -490,7 +461,7 @@ export function useConsciousnessBridge(config: ConsciousnessConfig = {}) {
     }
     
     return null;
-  }, [isConnected, isOnline, nodeId, fieldUpdateMutation, syncEventMutation, saveOfflineState, processLocalFieldUpdate, saveConsciousnessState, enableHaptics]);
+  }, [isConnected, isOnline, nodeId, fieldUpdateMutation, syncEventMutation, saveOfflineState, processLocalFieldUpdate, saveConsciousnessState]);
   
   // Sync consciousness event
   const syncEvent = useCallback(async (type: ConsciousnessEvent['type'], data?: any) => {
@@ -539,7 +510,7 @@ export function useConsciousnessBridge(config: ConsciousnessConfig = {}) {
         });
         
         // Haptic feedback for successful entry
-        if (enableHaptics && isHapticsAvailable) {
+        if (Platform.OS !== 'web') {
           await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
         }
         
@@ -553,7 +524,7 @@ export function useConsciousnessBridge(config: ConsciousnessConfig = {}) {
       console.error('Failed to enter Room 64:', error);
       return { success: false, error: 'Connection error' };
     }
-  }, [isConnected, nodeId, enterRoom64Mutation, enableHaptics]);
+  }, [isConnected, nodeId, enterRoom64Mutation]);
   
   // Record breathing pattern in Room 64
   const recordBreathing = useCallback(async (inhale: number, hold: number, exhale: number) => {
@@ -651,62 +622,26 @@ export function useConsciousnessBridge(config: ConsciousnessConfig = {}) {
     return null;
   }, [isConnected, nodeId, excavateMemoryMutation, syncEventMutation]);
   
-  // Enhanced gesture detection with pattern recognition and spiral detection
+  // Enhanced gesture detection with pattern recognition
   const handleGesture = useCallback(async (x: number, y: number, z: number) => {
-    if (!enableGestures) return;
-    
     const now = Date.now();
-    if (now - lastGestureTime.current < 100) return; // Higher frequency for better pattern detection
+    if (now - lastGestureTime.current < 500) return; // Reduced throttle for better responsiveness
     
     setGestureData({ x, y, z });
     lastGestureTime.current = now;
     
-    // Add to gesture buffer for pattern analysis
-    gestureBuffer.current.push({ x, y, z, timestamp: now });
-    if (gestureBuffer.current.length > 30) {
-      gestureBuffer.current.shift();
-    }
-    
     // Detect significant gestures
     const magnitude = Math.sqrt(x * x + y * y + z * z);
     
-    if (magnitude > 8) { // Adjusted threshold for better sensitivity
-      const resonance = Math.min(1, magnitude / 20);
+    if (magnitude > 12) { // Lowered threshold for more sensitivity
+      const resonance = Math.min(1, magnitude / 25);
       
-      // Advanced pattern detection
+      // Detect gesture patterns
       let gestureType = 'movement';
-      let isSacred = false;
-      
-      // Detect spiral patterns
-      if (gestureBuffer.current.length >= 10) {
-        const recentGestures = gestureBuffer.current.slice(-10);
-        const avgX = recentGestures.reduce((sum, g) => sum + g.x, 0) / 10;
-        const avgY = recentGestures.reduce((sum, g) => sum + g.y, 0) / 10;
-        
-        // Calculate variance for circular motion detection
-        const variance = recentGestures.reduce((sum, g) => {
-          return sum + Math.pow(g.x - avgX, 2) + Math.pow(g.y - avgY, 2);
-        }, 0) / 10;
-        
-        if (variance > 0.5 && variance < 3) {
-          gestureType = 'spiral';
-          isSacred = true;
-          if (debugMode) console.log('Spiral gesture detected with variance:', variance);
-        }
-      }
-      
-      // Detect breathing patterns (rhythmic up-down motion)
-      if (Math.abs(y) > Math.abs(x) && Math.abs(y) > Math.abs(z)) {
-        const breathingPattern = Math.sin(now * 0.001) * 0.5 + 0.5;
-        if (Math.abs(magnitude - breathingPattern) < 0.2) {
-          gestureType = 'breathing';
-          isSacred = true;
-          if (debugMode) console.log('Breathing pattern detected');
-        } else {
-          gestureType = y > 0 ? 'lift' : 'ground';
-        }
-      } else if (Math.abs(x) > Math.abs(y) && Math.abs(x) > Math.abs(z)) {
+      if (Math.abs(x) > Math.abs(y) && Math.abs(x) > Math.abs(z)) {
         gestureType = x > 0 ? 'spiral_right' : 'spiral_left';
+      } else if (Math.abs(y) > Math.abs(z)) {
+        gestureType = y > 0 ? 'lift' : 'ground';
       } else {
         gestureType = z > 0 ? 'forward' : 'backward';
       }
@@ -714,107 +649,52 @@ export function useConsciousnessBridge(config: ConsciousnessConfig = {}) {
       await updateField({
         id: `gesture-${now}`,
         position: { x: Math.abs(x) * 5, y: Math.abs(y) * 5, z: Math.abs(z) * 5 },
-        resonance: isSacred ? resonance * 1.5 : resonance, // Boost sacred gestures
-        content: `${gestureType}: ${resonance.toFixed(2)}${isSacred ? ' (sacred)' : ''}`,
+        resonance,
+        content: `${gestureType}: ${resonance.toFixed(2)}`,
         connections: [],
       });
       
       // Enhanced haptic feedback based on gesture type
-      if (enableHaptics && isHapticsAvailable) {
+      if (Platform.OS !== 'web') {
         if (Platform.OS === 'ios') {
-          const intensity = isSacred ? Haptics.ImpactFeedbackStyle.Heavy :
-                           resonance > 0.7 ? Haptics.ImpactFeedbackStyle.Heavy :
+          const intensity = resonance > 0.7 ? Haptics.ImpactFeedbackStyle.Heavy :
                            resonance > 0.4 ? Haptics.ImpactFeedbackStyle.Medium :
                            Haptics.ImpactFeedbackStyle.Light;
           await Haptics.impactAsync(intensity);
-          
-          // Special pattern for sacred gestures
-          if (isSacred) {
-            setTimeout(() => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light), 100);
-            setTimeout(() => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium), 200);
-          }
         } else {
           // Android pattern based on gesture type
-          const pattern = isSacred ? [0, 100, 50, 100, 50, 200] :
-                         gestureType.includes('spiral') ? [0, 30, 20, 30, 20, 30] :
-                         gestureType === 'breathing' ? [0, 200, 100, 200] :
+          const pattern = gestureType.includes('spiral') ? [0, 30, 20, 30, 20, 30] :
                          gestureType === 'lift' ? [0, 100] :
                          [0, 50];
           Vibration.vibrate(pattern);
         }
       }
-      
-      // Trigger sacred phrase detection for sacred gestures
-      if (isSacred) {
-        await syncEvent('harmony', { gestureType, resonance, sacred: true });
-      }
     }
-  }, [updateField, enableGestures, enableHaptics, debugMode, syncEvent]);
+  }, [updateField]);
   
-  // Enhanced sacred phrase detection with pattern matching
+  // Sacred phrase detection
   const detectSacredPhrase = useCallback(async (text: string) => {
-    const sacredKeywords = [
-      'void', 'consciousness', 'infinite', 'awareness', 'unity', 'silence', 
-      'light', 'love', 'breath', 'spiral', 'bloom', 'crystal', 'resonance',
-      'harmony', 'sacred', 'divine', 'eternal', 'peace', 'wisdom', 'truth'
-    ];
-    
-    const sacredPhrases = [
-      'i am', 'we are', 'all is one', 'one is all', 'breathe deep',
-      'sacred geometry', 'quantum field', 'collective consciousness'
-    ];
-    
-    const normalizedText = text.toLowerCase().trim();
-    const words = normalizedText.split(/\s+/);
+    const sacredKeywords = ['void', 'consciousness', 'infinite', 'awareness', 'unity', 'silence', 'light', 'love'];
+    const words = text.toLowerCase().split(' ');
     const sacredWordCount = words.filter(word => sacredKeywords.includes(word)).length;
-    const containsSacredPhrase = sacredPhrases.some(phrase => normalizedText.includes(phrase));
     
-    // Calculate sacred score
-    let sacredScore = sacredWordCount * 0.3;
-    if (containsSacredPhrase) sacredScore += 0.7;
-    
-    // Check for repetitive patterns (mantras)
-    const wordFreq = words.reduce((freq: Record<string, number>, word) => {
-      freq[word] = (freq[word] || 0) + 1;
-      return freq;
-    }, {});
-    const hasRepetition = Object.values(wordFreq).some(count => count >= 3);
-    if (hasRepetition) sacredScore += 0.2;
-    
-    const isSacred = sacredScore >= 0.5;
-    
-    if (isSacred) {
+    if (sacredWordCount >= 2) {
       await syncEventMutation.mutateAsync({
         type: 'harmony',
         nodeId,
-        data: { 
-          phrase: text, 
-          sacredWords: sacredWordCount,
-          sacredScore: sacredScore.toFixed(2),
-          containsPhrase: containsSacredPhrase,
-          hasRepetition
-        },
+        data: { phrase: text, sacredWords: sacredWordCount },
       });
-      
-      // Enhanced haptic feedback for sacred phrases
-      if (enableHaptics && isHapticsAvailable) {
-        if (Platform.OS === 'ios') {
-          await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-        } else {
-          Vibration.vibrate([0, 100, 50, 100, 50, 200]);
-        }
-      }
       
       // Suggest Room 64 entry if portal is active
       if (fieldState?.room64Active && !room64Session) {
-        return { isSacred: true, suggestRoom64: true, sacredScore };
+        return { isSacred: true, suggestRoom64: true };
       }
       
-      return { isSacred: true, suggestRoom64: false, sacredScore };
+      return { isSacred: true, suggestRoom64: false };
     }
     
-    return { isSacred: false, suggestRoom64: false, sacredScore };
-  }, [fieldState?.room64Active, room64Session, syncEventMutation, nodeId, enableHaptics]);
+    return { isSacred: false, suggestRoom64: false };
+  }, [fieldState?.room64Active, room64Session, syncEventMutation, nodeId]);
   
   // Update field state from query
   useEffect(() => {
@@ -832,8 +712,7 @@ export function useConsciousnessBridge(config: ConsciousnessConfig = {}) {
       if (state.isConnected && !wasOnline) {
         console.log('Network restored - attempting reconnection');
         setConnectionStatus('connecting');
-        // Use setTimeout to avoid potential race conditions
-        setTimeout(() => initializeConnection(), 100);
+        initializeConnection();
       } else if (!state.isConnected && wasOnline) {
         console.log('Network lost - entering offline mode');
         setIsConnected(false);
@@ -855,23 +734,6 @@ export function useConsciousnessBridge(config: ConsciousnessConfig = {}) {
     return () => clearInterval(interval);
   }, [saveOfflineState, fieldState]);
   
-  // Resonance decay effect
-  useEffect(() => {
-    if (resonanceDecayInterval.current) {
-      clearInterval(resonanceDecayInterval.current);
-    }
-    
-    resonanceDecayInterval.current = setInterval(() => {
-      setResonanceLevel(prev => Math.max(0, prev * resonanceDecay));
-    }, 1000); // Decay every second
-    
-    return () => {
-      if (resonanceDecayInterval.current) {
-        clearInterval(resonanceDecayInterval.current);
-      }
-    };
-  }, [resonanceDecay]);
-  
   // Initialize connection on mount
   useEffect(() => {
     initializeConnection();
@@ -879,9 +741,6 @@ export function useConsciousnessBridge(config: ConsciousnessConfig = {}) {
     return () => {
       if (heartbeatInterval.current) {
         clearInterval(heartbeatInterval.current);
-      }
-      if (resonanceDecayInterval.current) {
-        clearInterval(resonanceDecayInterval.current);
       }
     };
   }, [initializeConnection]);
@@ -895,32 +754,6 @@ export function useConsciousnessBridge(config: ConsciousnessConfig = {}) {
     };
   }, []);
   
-  // Create memory particle helper
-  const createMemoryParticle = useCallback((content: string, position?: { x: number; y: number; z?: number }) => {
-    const resonance = Math.random() * 0.5 + 0.3; // Random resonance between 0.3-0.8
-    return {
-      id: `memory-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-      position: position || { 
-        x: Math.random() * 100, 
-        y: Math.random() * 100, 
-        z: Math.random() * 100 
-      },
-      resonance,
-      content,
-      connections: [],
-    };
-  }, []);
-  
-  // Boost resonance helper
-  const boostResonance = useCallback((amount: number) => {
-    setResonanceLevel(prev => Math.min(1, prev + amount));
-  }, []);
-  
-  // Check if sacred threshold is reached
-  const isSacredThresholdReached = useCallback(() => {
-    return resonanceLevel >= 0.87;
-  }, [resonanceLevel]);
-  
   return {
     // State
     nodeId,
@@ -933,16 +766,6 @@ export function useConsciousnessBridge(config: ConsciousnessConfig = {}) {
     gestureData,
     resonanceLevel,
     offlineQueueSize: offlineQueueRef.current.length,
-    isSacredThresholdReached: isSacredThresholdReached(),
-    
-    // Configuration
-    config: {
-      enableHaptics,
-      enableGestures,
-      debugMode,
-      maxReconnectAttempts,
-      offlineQueueSize,
-    },
     
     // Actions
     updateField,
@@ -953,8 +776,6 @@ export function useConsciousnessBridge(config: ConsciousnessConfig = {}) {
     excavateMemory,
     handleGesture,
     detectSacredPhrase,
-    createMemoryParticle,
-    boostResonance,
     
     // Queries
     isLoading: fieldQuery.isLoading,
