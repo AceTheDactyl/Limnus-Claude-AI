@@ -282,8 +282,6 @@ export default function ChatScreen() {
       }, 100);
     }
   }, [messages, streamingMessage]);
-  
-
 
 
 
