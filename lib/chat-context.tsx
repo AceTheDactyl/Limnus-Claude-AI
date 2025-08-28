@@ -109,7 +109,7 @@ export const [ChatProvider, useChat] = createContextHook(() => {
           idempotencyKey: `offline-${queuedMessage.timestamp}`,
         });
         
-        if (result && result.message) {
+        if (result && result.success) {
           processedMessages.push(queuedMessage, result.message);
           setMessages(prev => [...prev, result.message]);
         }
@@ -342,7 +342,7 @@ export const [ChatProvider, useChat] = createContextHook(() => {
 
       console.log('tRPC response:', result);
 
-      if (result && result.message) {
+      if (result && result.success) {
         // Enhanced streaming effect with variable speed
         const fullResponse = result.message.content;
         const chunks = fullResponse.split(' ');
