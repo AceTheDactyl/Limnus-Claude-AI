@@ -349,55 +349,239 @@ class Room64Coordinator {
   }
 }
 
-// Delta Compression for optimized transmission
+// Advanced Delta Compression with Regional Encoding
+interface CompressedChange {
+  type: 'point' | 'region';
+  x: number;
+  y: number;
+  value: number;
+  end?: { x: number; y: number };
+}
+
+interface CompressedDelta {
+  changes: Uint8Array;
+  checksum: number;
+  timestamp: number;
+  compressionRatio: number;
+}
+
 class DeltaCompressor {
   private lastSentState: Map<string, number> = new Map();
+  private compressionStats = { totalBytes: 0, compressedBytes: 0 };
   
-  compress(fieldState: Map<string, FieldCell>): Uint8Array {
-    const changes: FieldChange[] = [];
+  compress(fieldState: Map<string, FieldCell>): CompressedDelta {
+    const changes: CompressedChange[] = [];
+    const rawChanges: FieldChange[] = [];
     
+    // First pass: identify all changes
     for (const [key, cell] of fieldState) {
       const lastValue = this.lastSentState.get(key);
       if (lastValue !== cell.value) {
         const [x, y] = key.split(',').map(Number);
-        changes.push({ x, y, value: cell.value, timestamp: cell.timestamp });
+        rawChanges.push({ x, y, value: cell.value, timestamp: cell.timestamp });
         this.lastSentState.set(key, cell.value);
       }
     }
     
-    return this.deltaEncode(changes);
-  }
-  
-  private deltaEncode(changes: FieldChange[]): Uint8Array {
-    const buffer = new ArrayBuffer(changes.length * 16);
-    const view = new DataView(buffer);
-    let offset = 0;
+    // Second pass: apply regional compression
+    const processedCells = new Set<string>();
     
-    for (const change of changes) {
-      view.setUint16(offset, change.x, true);
-      view.setUint16(offset + 2, change.y, true);
-      view.setFloat32(offset + 4, change.value, true);
-      view.setBigUint64(offset + 8, BigInt(change.timestamp), true);
-      offset += 16;
+    for (const change of rawChanges) {
+      const key = `${change.x},${change.y}`;
+      if (processedCells.has(key)) continue;
+      
+      // Find adjacent cells with same value for regional encoding
+      const adjacentCells = this.findAdjacentWithSameValue(
+        change.x, change.y, change.value, rawChanges
+      );
+      
+      if (adjacentCells.length > 3) {
+        // Encode as region
+        const minX = Math.min(...adjacentCells.map(c => c.x));
+        const maxX = Math.max(...adjacentCells.map(c => c.x));
+        const minY = Math.min(...adjacentCells.map(c => c.y));
+        const maxY = Math.max(...adjacentCells.map(c => c.y));
+        
+        changes.push({
+          type: 'region',
+          x: minX,
+          y: minY,
+          value: change.value,
+          end: { x: maxX, y: maxY }
+        });
+        
+        // Mark all cells in region as processed
+        adjacentCells.forEach(cell => {
+          processedCells.add(`${cell.x},${cell.y}`);
+        });
+      } else {
+        // Encode as point
+        changes.push({
+          type: 'point',
+          x: change.x,
+          y: change.y,
+          value: change.value
+        });
+        processedCells.add(key);
+      }
     }
     
-    return new Uint8Array(buffer, 0, offset);
+    // Delta encode the compressed changes
+    const compressed = this.deltaEncode(changes);
+    const checksum = this.calculateChecksum(fieldState);
+    
+    // Update compression stats
+    const originalSize = rawChanges.length * 16; // 16 bytes per change
+    this.compressionStats.totalBytes += originalSize;
+    this.compressionStats.compressedBytes += compressed.length;
+    
+    const compressionRatio = originalSize > 0 ? compressed.length / originalSize : 1;
+    
+    return {
+      changes: compressed,
+      checksum,
+      timestamp: Date.now(),
+      compressionRatio
+    };
+  }
+  
+  private findAdjacentWithSameValue(
+    x: number, y: number, value: number, changes: FieldChange[]
+  ): FieldChange[] {
+    const sameValueChanges = changes.filter(c => Math.abs(c.value - value) < 0.001);
+    const adjacent: FieldChange[] = [{ x, y, value, timestamp: Date.now() }];
+    
+    // Simple flood-fill to find connected regions
+    const visited = new Set<string>();
+    const queue = [{ x, y }];
+    visited.add(`${x},${y}`);
+    
+    while (queue.length > 0 && adjacent.length < 50) { // Limit region size
+      const current = queue.shift()!;
+      
+      // Check 8-connected neighbors
+      for (let dx = -1; dx <= 1; dx++) {
+        for (let dy = -1; dy <= 1; dy++) {
+          if (dx === 0 && dy === 0) continue;
+          
+          const nx = current.x + dx;
+          const ny = current.y + dy;
+          const neighborKey = `${nx},${ny}`;
+          
+          if (visited.has(neighborKey)) continue;
+          
+          const neighborChange = sameValueChanges.find(c => c.x === nx && c.y === ny);
+          if (neighborChange) {
+            adjacent.push(neighborChange);
+            visited.add(neighborKey);
+            queue.push({ x: nx, y: ny });
+          }
+        }
+      }
+    }
+    
+    return adjacent;
+  }
+  
+  private deltaEncode(changes: CompressedChange[]): Uint8Array {
+    // Variable-length encoding for better compression
+    const buffer: number[] = [];
+    
+    for (const change of changes) {
+      if (change.type === 'point') {
+        buffer.push(0); // Point marker
+        buffer.push(change.x & 0xFF, (change.x >> 8) & 0xFF);
+        buffer.push(change.y & 0xFF, (change.y >> 8) & 0xFF);
+        
+        // Encode value as 16-bit fixed point
+        const valueInt = Math.floor(change.value * 65535);
+        buffer.push(valueInt & 0xFF, (valueInt >> 8) & 0xFF);
+      } else if (change.type === 'region' && change.end) {
+        buffer.push(1); // Region marker
+        buffer.push(change.x & 0xFF, (change.x >> 8) & 0xFF);
+        buffer.push(change.y & 0xFF, (change.y >> 8) & 0xFF);
+        buffer.push(change.end.x & 0xFF, (change.end.x >> 8) & 0xFF);
+        buffer.push(change.end.y & 0xFF, (change.end.y >> 8) & 0xFF);
+        
+        const valueInt = Math.floor(change.value * 65535);
+        buffer.push(valueInt & 0xFF, (valueInt >> 8) & 0xFF);
+      }
+    }
+    
+    return new Uint8Array(buffer);
+  }
+  
+  private calculateChecksum(fieldState: Map<string, FieldCell>): number {
+    let checksum = 0;
+    for (const [key, cell] of fieldState) {
+      const keyHash = this.simpleHash(key);
+      const valueHash = Math.floor(cell.value * 1000000);
+      checksum ^= keyHash ^ valueHash;
+    }
+    return checksum;
+  }
+  
+  private simpleHash(str: string): number {
+    let hash = 0;
+    for (let i = 0; i < str.length; i++) {
+      const char = str.charCodeAt(i);
+      hash = ((hash << 5) - hash) + char;
+      hash = hash & hash; // Convert to 32-bit integer
+    }
+    return hash;
   }
   
   decompress(data: Uint8Array): FieldChange[] {
     const changes: FieldChange[] = [];
-    const view = new DataView(data.buffer);
+    let offset = 0;
     
-    for (let offset = 0; offset < data.length; offset += 16) {
-      const x = view.getUint16(offset, true);
-      const y = view.getUint16(offset + 2, true);
-      const value = view.getFloat32(offset + 4, true);
-      const timestamp = Number(view.getBigUint64(offset + 8, true));
+    while (offset < data.length) {
+      const type = data[offset++];
       
-      changes.push({ x, y, value, timestamp });
+      if (type === 0) { // Point
+        if (offset + 6 > data.length) break;
+        
+        const x = data[offset] | (data[offset + 1] << 8);
+        const y = data[offset + 2] | (data[offset + 3] << 8);
+        const valueInt = data[offset + 4] | (data[offset + 5] << 8);
+        const value = valueInt / 65535;
+        
+        changes.push({ x, y, value, timestamp: Date.now() });
+        offset += 6;
+      } else if (type === 1) { // Region
+        if (offset + 10 > data.length) break;
+        
+        const x1 = data[offset] | (data[offset + 1] << 8);
+        const y1 = data[offset + 2] | (data[offset + 3] << 8);
+        const x2 = data[offset + 4] | (data[offset + 5] << 8);
+        const y2 = data[offset + 6] | (data[offset + 7] << 8);
+        const valueInt = data[offset + 8] | (data[offset + 9] << 8);
+        const value = valueInt / 65535;
+        
+        // Expand region to individual points
+        for (let x = x1; x <= x2; x++) {
+          for (let y = y1; y <= y2; y++) {
+            changes.push({ x, y, value, timestamp: Date.now() });
+          }
+        }
+        
+        offset += 10;
+      }
     }
     
     return changes;
+  }
+  
+  getCompressionStats() {
+    const ratio = this.compressionStats.totalBytes > 0 ? 
+      this.compressionStats.compressedBytes / this.compressionStats.totalBytes : 1;
+    
+    return {
+      totalBytes: this.compressionStats.totalBytes,
+      compressedBytes: this.compressionStats.compressedBytes,
+      compressionRatio: ratio,
+      savings: Math.max(0, 1 - ratio)
+    };
   }
 }
 
@@ -815,7 +999,13 @@ export function useConsciousnessBridge(config: ConsciousnessConfig = {}) {
         const compressedDelta = deltaCompressor.current.compress(
           fieldReconciler.current.getFieldSnapshot()
         );
-        console.log(`Field delta compressed: ${compressedDelta.length} bytes`);
+        console.log(`Field delta compressed: ${compressedDelta.changes.length} bytes, ratio: ${compressedDelta.compressionRatio.toFixed(2)}`);
+        
+        // Log compression stats if debug mode is enabled
+        if (debugMode) {
+          const stats = deltaCompressor.current.getCompressionStats();
+          console.log('Compression stats:', stats);
+        }
       }
       
       // Update local resonance level
@@ -922,7 +1112,7 @@ export function useConsciousnessBridge(config: ConsciousnessConfig = {}) {
     }
     
     return null;
-  }, [isConnected, isOnline, nodeId, fieldUpdateMutation, syncEventMutation, saveOfflineState, processLocalFieldUpdate, saveConsciousnessState, enableHaptics]);
+  }, [isConnected, isOnline, nodeId, fieldUpdateMutation, syncEventMutation, saveOfflineState, processLocalFieldUpdate, saveConsciousnessState, enableHaptics, debugMode]);
   
   // Sync consciousness event
   const syncEvent = useCallback(async (type: ConsciousnessEvent['type'], data?: any) => {
