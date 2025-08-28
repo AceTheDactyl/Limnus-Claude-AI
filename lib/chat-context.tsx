@@ -29,6 +29,8 @@ export const [ChatProvider, useChat] = createContextHook(() => {
     retry: 3,
     retryDelay: 1000,
     staleTime: 30000, // 30 seconds
+    refetchOnMount: true,
+    refetchOnWindowFocus: false,
   });
   const messagesQuery = trpc.chat.getMessages.useQuery(
     { conversationId: currentConversationId! },
@@ -37,6 +39,8 @@ export const [ChatProvider, useChat] = createContextHook(() => {
       retry: 3,
       retryDelay: 1000,
       staleTime: 10000, // 10 seconds
+      refetchOnMount: true,
+      refetchOnWindowFocus: false,
     }
   );
   const sendMessageMutation = trpc.chat.sendMessage.useMutation();

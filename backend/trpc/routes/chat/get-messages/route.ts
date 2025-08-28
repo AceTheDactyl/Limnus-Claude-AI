@@ -13,13 +13,16 @@ export const getMessagesProcedure = publicProcedure
     
     console.log('Getting messages for conversation:', conversationId);
     
+    // Always return a valid structure, never undefined
+    const defaultResult = {
+      messages: [],
+    };
+    
     try {
       // Validate input
       if (!conversationId || typeof conversationId !== 'string') {
         console.log('Invalid conversationId provided:', conversationId);
-        return {
-          messages: [],
-        };
+        return defaultResult;
       }
       
       // Get messages from storage
@@ -49,10 +52,7 @@ export const getMessagesProcedure = publicProcedure
     } catch (error) {
       console.error('Error getting messages for conversation:', conversationId, error);
       // Always return a valid structure on error
-      const errorResult = {
-        messages: [],
-      };
-      console.log('Returning error messages result:', errorResult);
-      return errorResult;
+      console.log('Returning error messages result:', defaultResult);
+      return defaultResult;
     }
   });

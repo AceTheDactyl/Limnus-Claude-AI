@@ -691,7 +691,7 @@ export default function ChatScreen() {
             )}
           
           {/* Streaming message */}
-          {isStreaming && streamingMessage && streamingMessage.trim() && (
+          {isStreaming && streamingMessage && streamingMessage.trim().length > 0 && (
             <View style={styles.messageContainer}>
               <View style={[styles.messageBubble, styles.assistantMessage]}>
                 <View style={styles.messageHeader}>
