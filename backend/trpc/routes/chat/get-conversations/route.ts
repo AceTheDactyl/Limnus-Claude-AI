@@ -11,8 +11,11 @@ export const getConversationsProcedure = publicProcedure
       
       console.log('Found stored conversations:', storedConversations?.length || 0);
       
+      // Ensure we always have an array
+      const conversations = Array.isArray(storedConversations) ? storedConversations : [];
+      
       // Always return a valid structure, even if empty
-      if (!storedConversations || storedConversations.length === 0) {
+      if (conversations.length === 0) {
         console.log('No stored conversations found, returning empty array');
         const result = {
           conversations: [],
@@ -22,7 +25,7 @@ export const getConversationsProcedure = publicProcedure
       }
       
       // Ensure conversations are properly sorted
-      const sortedConversations = storedConversations.sort((a, b) => b.timestamp - a.timestamp);
+      const sortedConversations = conversations.sort((a, b) => b.timestamp - a.timestamp);
       
       const result = {
         conversations: sortedConversations,

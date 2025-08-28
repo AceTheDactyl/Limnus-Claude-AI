@@ -14,12 +14,24 @@ export const getMessagesProcedure = publicProcedure
     console.log('Getting messages for conversation:', conversationId);
     
     try {
+      // Validate input
+      if (!conversationId || typeof conversationId !== 'string') {
+        console.log('Invalid conversationId provided:', conversationId);
+        return {
+          messages: [],
+        };
+      }
+      
       // Get messages from storage
       const storedMessages = getStoredMessages(conversationId);
       
       console.log('Found stored messages:', storedMessages?.length || 0);
-      if (storedMessages && storedMessages.length > 0) {
-        console.log('Message details:', storedMessages.map(m => ({ 
+      
+      // Ensure we always have an array
+      const messages = Array.isArray(storedMessages) ? storedMessages : [];
+      
+      if (messages.length > 0) {
+        console.log('Message details:', messages.map(m => ({ 
           role: m.role, 
           content: m.content.substring(0, 50) + '...', 
           timestamp: m.timestamp 
@@ -27,7 +39,7 @@ export const getMessagesProcedure = publicProcedure
       }
       
       // Always return a valid structure, even if empty
-      if (!storedMessages || storedMessages.length === 0) {
+      if (messages.length === 0) {
         console.log('No stored messages found for conversation:', conversationId);
         const result = {
           messages: [],
@@ -37,7 +49,7 @@ export const getMessagesProcedure = publicProcedure
       }
       
       // Ensure messages are properly sorted by timestamp
-      const sortedMessages = storedMessages.sort((a, b) => a.timestamp - b.timestamp);
+      const sortedMessages = messages.sort((a, b) => a.timestamp - b.timestamp);
       
       const result = {
         messages: sortedMessages,

@@ -441,24 +441,25 @@ export const sendMessageProcedure = publicProcedure
   });
 
 // Helper function to get stored messages (used by get-messages route)
-export function getStoredMessages(conversationId: string) {
+export function getStoredMessages(conversationId: string): any[] {
   try {
-    if (!conversationId) {
-      console.log('getStoredMessages: No conversationId provided');
+    if (!conversationId || typeof conversationId !== 'string') {
+      console.log('getStoredMessages: Invalid conversationId provided:', conversationId);
       return [];
     }
     
     const messages = conversationMessages.get(conversationId);
-    const result = messages || [];
+    const result = Array.isArray(messages) ? messages : [];
     console.log(`getStoredMessages: Found ${result.length} messages for conversation ${conversationId}`);
     
     // Ensure all messages have required properties
     const validMessages = result.filter(msg => 
       msg && 
       typeof msg === 'object' && 
-      msg.role && 
-      msg.content && 
-      msg.timestamp
+      typeof msg.role === 'string' &&
+      typeof msg.content === 'string' && 
+      typeof msg.timestamp === 'number' &&
+      (msg.role === 'user' || msg.role === 'assistant')
     );
     
     if (validMessages.length !== result.length) {
@@ -473,7 +474,7 @@ export function getStoredMessages(conversationId: string) {
 }
 
 // Helper function to get stored conversations (used by get-conversations route)
-export function getStoredConversations() {
+export function getStoredConversations(): any[] {
   try {
     const conversationList = Array.from(conversations.values());
     console.log(`getStoredConversations: Found ${conversationList.length} conversations`);
@@ -482,10 +483,10 @@ export function getStoredConversations() {
     const validConversations = conversationList.filter(conv => 
       conv && 
       typeof conv === 'object' && 
-      conv.id && 
-      conv.title && 
-      conv.lastMessage !== undefined && 
-      conv.timestamp
+      typeof conv.id === 'string' &&
+      typeof conv.title === 'string' &&
+      typeof conv.lastMessage === 'string' &&
+      typeof conv.timestamp === 'number'
     );
     
     if (validConversations.length !== conversationList.length) {
