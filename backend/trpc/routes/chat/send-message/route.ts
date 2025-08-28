@@ -14,10 +14,6 @@ const sendMessageSchema = z.object({
   idempotencyKey: z.string().optional(),
 });
 
-// In-memory storage for messages (in production, use a proper database)
-const conversationMessages = new Map<string, any[]>();
-const conversations = new Map<string, { id: string; title: string; lastMessage: string; timestamp: number }>();
-
 // Production-ready streaming service with enhanced features
 class StreamingService {
   private static instance: StreamingService;
@@ -321,29 +317,8 @@ export const sendMessageProcedure = publicProcedure
   .input(sendMessageSchema)
   .mutation(async ({ input }) => {
     try {
-      console.log('Processing message for conversation:', input.conversationId);
-      
-      // Store the user message first
-      const userMessage = {
-        role: 'user' as const,
-        content: input.message,
-        timestamp: Date.now(),
-      };
-      
-      // Get existing messages for this conversation
-      const existingMessages = conversationMessages.get(input.conversationId) || [];
-      
-      // Add user message to conversation
-      const updatedMessages = [...existingMessages, userMessage];
-      conversationMessages.set(input.conversationId, updatedMessages);
-      
-      console.log('Stored user message. Total messages in conversation:', updatedMessages.length);
-      
       const streamingService = StreamingService.getInstance();
-      const result = await streamingService.processMessage({
-        ...input,
-        messages: updatedMessages
-      });
+      const result = await streamingService.processMessage(input);
       
       // Ensure the response always has the expected structure
       if (!result || typeof result !== 'object') {
@@ -353,19 +328,13 @@ export const sendMessageProcedure = publicProcedure
       // Ensure required fields exist
       if (!result.success || !result.message || !result.conversationId) {
         console.error('Invalid response structure:', result);
-        const fallbackMessage = {
-          role: 'assistant' as const,
-          content: generateFallbackResponse(input.message),
-          timestamp: Date.now(),
-        };
-        
-        // Store fallback message
-        const messagesWithFallback = [...updatedMessages, fallbackMessage];
-        conversationMessages.set(input.conversationId, messagesWithFallback);
-        
         return {
           success: true,
-          message: fallbackMessage,
+          message: {
+            role: 'assistant' as const,
+            content: generateFallbackResponse(input.message),
+            timestamp: Date.now(),
+          },
           conversationId: input.conversationId,
           metadata: {
             processingTime: 0,
@@ -377,52 +346,18 @@ export const sendMessageProcedure = publicProcedure
         };
       }
       
-      // Store the assistant's response
-      const finalMessages = [...updatedMessages, result.message];
-      conversationMessages.set(input.conversationId, finalMessages);
-      
-      // Update conversation metadata
-      const conversationTitle = input.message.length > 50 
-        ? input.message.substring(0, 47) + '...' 
-        : input.message;
-      
-      conversations.set(input.conversationId, {
-        id: input.conversationId,
-        title: conversationTitle,
-        lastMessage: result.message.content.length > 100 
-          ? result.message.content.substring(0, 97) + '...' 
-          : result.message.content,
-        timestamp: Date.now()
-      });
-      
-      console.log('Stored assistant message. Total messages in conversation:', finalMessages.length);
-      
       return result;
     } catch (error) {
       console.error('sendMessageProcedure error:', error);
       
-      // Create fallback response
-      const fallbackMessage = {
-        role: 'assistant' as const,
-        content: generateEnhancedFallbackResponse(input.message, error as Error),
-        timestamp: Date.now(),
-      };
-      
-      // Store user message and fallback response
-      const userMessage = {
-        role: 'user' as const,
-        content: input.message,
-        timestamp: Date.now(),
-      };
-      
-      const existingMessages = conversationMessages.get(input.conversationId) || [];
-      const messagesWithError = [...existingMessages, userMessage, fallbackMessage];
-      conversationMessages.set(input.conversationId, messagesWithError);
-      
       // Always return a valid response structure
       return {
         success: true,
-        message: fallbackMessage,
+        message: {
+          role: 'assistant' as const,
+          content: generateEnhancedFallbackResponse(input.message, error as Error),
+          timestamp: Date.now(),
+        },
         conversationId: input.conversationId,
         metadata: {
           processingTime: 0,
@@ -434,16 +369,6 @@ export const sendMessageProcedure = publicProcedure
       };
     }
   });
-
-// Helper function to get stored messages (used by get-messages route)
-export function getStoredMessages(conversationId: string) {
-  return conversationMessages.get(conversationId) || [];
-}
-
-// Helper function to get stored conversations (used by get-conversations route)
-export function getStoredConversations() {
-  return Array.from(conversations.values()).sort((a, b) => b.timestamp - a.timestamp);
-}
 
 // Health check endpoint for monitoring
 export const healthCheckProcedure = publicProcedure

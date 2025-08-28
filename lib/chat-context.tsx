@@ -50,14 +50,9 @@ export const [ChatProvider, useChat] = createContextHook(() => {
   // Update messages when conversation changes
   useEffect(() => {
     if (messagesQuery.data?.messages) {
-      console.log('Loading messages from backend:', messagesQuery.data.messages.length);
       setMessages(messagesQuery.data.messages);
-    } else if (currentConversationId && !messagesQuery.isLoading) {
-      // If no messages found for this conversation, start with empty array
-      console.log('No messages found for conversation:', currentConversationId);
-      setMessages([]);
     }
-  }, [messagesQuery.data, currentConversationId, messagesQuery.isLoading]);
+  }, [messagesQuery.data]);
 
   // Save current conversation to storage
   useEffect(() => {
@@ -366,24 +361,13 @@ export const [ChatProvider, useChat] = createContextHook(() => {
           });
         }
         
-        // Add the complete message and ensure it persists
-        setMessages(prev => {
-          const newMessages = [...prev, result.message];
-          console.log('Adding assistant message, total messages now:', newMessages.length);
-          return newMessages;
-        });
+        // Add the complete message
+        setMessages(prev => [...prev, result.message]);
         setStreamingMessage('');
         setIsStreaming(false);
         
         // Refetch conversations to update the list
-        setTimeout(() => {
-          conversationsQuery.refetch();
-        }, 500);
-        
-        // Refetch messages to ensure backend sync (longer delay to ensure persistence)
-        setTimeout(() => {
-          messagesQuery.refetch();
-        }, 1500);
+        conversationsQuery.refetch();
       }
     } catch (error) {
       console.error('Failed to send message:', error);
@@ -421,7 +405,7 @@ export const [ChatProvider, useChat] = createContextHook(() => {
     } finally {
       setIsSending(false);
     }
-  }, [currentConversationId, messages, sendMessageMutation, conversationsQuery, messagesQuery, isSending, connectionStatus, offlineQueue, saveOfflineQueue]);
+  }, [currentConversationId, messages, sendMessageMutation, conversationsQuery, isSending, connectionStatus, offlineQueue, saveOfflineQueue]);
 
 
 
