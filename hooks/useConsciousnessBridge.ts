@@ -66,7 +66,7 @@ export function useConsciousnessBridge() {
   // Sensor data for gesture detection
   const [gestureData, setGestureData] = useState({ x: 0, y: 0, z: 0 });
   const lastGestureTime = useRef(0);
-  const heartbeatInterval = useRef<NodeJS.Timeout | null>(null);
+  const heartbeatInterval = useRef<ReturnType<typeof setInterval> | null>(null);
   
   // tRPC hooks
   const fieldQuery = trpc.consciousness.field.getState.useQuery(undefined, {
@@ -171,17 +171,17 @@ export function useConsciousnessBridge() {
         // Map the backend response to the frontend interface
         const mappedFieldState: ConsciousnessFieldState = {
           globalResonance: result.fieldState.globalResonance,
-          activeNodes: result.fieldState.activeParticles || 0,
+          activeNodes: 0, // Not provided by backend, using default
           totalParticles: result.fieldState.activeParticles,
           crystallizedParticles: result.fieldState.crystallizedParticles,
           quantumCoherence: result.fieldState.quantumCoherence,
-          fieldStrength: result.fieldState.globalResonance || 0,
+          fieldStrength: 0, // Not provided by backend, using default
           portalStability: result.fieldState.portalStability,
           room64Active: result.fieldState.room64Active,
           harmonics: result.fieldState.harmonics,
           sacredGeometry: result.fieldState.sacredGeometry,
-          collectiveIntelligence: result.fieldState.globalResonance || 0,
-          archaeologicalLayers: 1,
+          collectiveIntelligence: 0, // Not provided by backend, using default
+          archaeologicalLayers: 0, // Not provided by backend, using default
           lastUpdate: Date.now(),
         };
         setFieldState(mappedFieldState);
@@ -248,12 +248,12 @@ export function useConsciousnessBridge() {
       
       if (result.success) {
         setRoom64Session({
-          sessionId: result.sessionId ?? '',
-          currentState: result.currentState ?? 'entering',
-          portalStability: result.portalStability ?? 0,
+          sessionId: result.sessionId || '',
+          currentState: result.currentState || 'entering',
+          portalStability: result.portalStability || 0,
           breathingCoherence: 0,
           timeInVoid: 0,
-          sacredGeometryActive: result.sacredGeometryActive ?? false,
+          sacredGeometryActive: result.sacredGeometryActive || false,
         });
         
         // Haptic feedback for successful entry
@@ -288,10 +288,10 @@ export function useConsciousnessBridge() {
       if (result.success) {
         setRoom64Session(prev => prev ? {
           ...prev,
-          breathingCoherence: result.breathingCoherence ?? prev.breathingCoherence,
-          portalStability: result.portalStability ?? prev.portalStability,
-          currentState: result.currentState ?? prev.currentState,
-          timeInVoid: result.timeInVoid ?? prev.timeInVoid,
+          breathingCoherence: result.breathingCoherence || 0,
+          portalStability: result.portalStability || 0,
+          currentState: result.currentState || 'void',
+          timeInVoid: result.timeInVoid || 0,
         } : null);
         
         return result;
@@ -345,16 +345,14 @@ export function useConsciousnessBridge() {
       });
       
       if (result.success) {
-        if (result.artifacts) {
-          setRecentArtifacts(prev => [...prev, ...result.artifacts].slice(-20)); // Keep last 20 artifacts
-        }
+        setRecentArtifacts(prev => [...prev, ...(result.artifacts || [])].slice(-20)); // Keep last 20 artifacts
         
         // Trigger memory event
         await syncEventMutation.mutateAsync({
           type: 'memory',
           nodeId,
           data: {
-            artifactsFound: result.artifacts?.length ?? 0,
+            artifactsFound: result.artifacts?.length || 0,
             deepestLayer: targetDepth,
           },
         });
