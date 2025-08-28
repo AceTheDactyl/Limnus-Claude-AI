@@ -441,98 +441,13 @@ export const sendMessageProcedure = publicProcedure
   });
 
 // Helper function to get stored messages (used by get-messages route)
-export function getStoredMessages(conversationId: string): any[] {
-  try {
-    if (!conversationId || typeof conversationId !== 'string') {
-      console.log('getStoredMessages: Invalid conversationId provided:', conversationId);
-      return [];
-    }
-    
-    const messages = conversationMessages.get(conversationId);
-    const result = Array.isArray(messages) ? messages : [];
-    console.log(`getStoredMessages: Found ${result.length} messages for conversation ${conversationId}`);
-    
-    // Ensure all messages have required properties
-    const validMessages = result.filter(msg => {
-      if (!msg || typeof msg !== 'object') {
-        console.warn('getStoredMessages: Invalid message object:', msg);
-        return false;
-      }
-      
-      if (typeof msg.role !== 'string' || (msg.role !== 'user' && msg.role !== 'assistant')) {
-        console.warn('getStoredMessages: Invalid message role:', msg.role);
-        return false;
-      }
-      
-      if (typeof msg.content !== 'string') {
-        console.warn('getStoredMessages: Invalid message content:', typeof msg.content);
-        return false;
-      }
-      
-      if (typeof msg.timestamp !== 'number' || isNaN(msg.timestamp)) {
-        console.warn('getStoredMessages: Invalid message timestamp:', msg.timestamp);
-        return false;
-      }
-      
-      return true;
-    });
-    
-    if (validMessages.length !== result.length) {
-      console.warn(`getStoredMessages: Filtered out ${result.length - validMessages.length} invalid messages`);
-    }
-    
-    return validMessages;
-  } catch (error) {
-    console.error('Error getting stored messages:', error);
-    return [];
-  }
+export function getStoredMessages(conversationId: string) {
+  return conversationMessages.get(conversationId) || [];
 }
 
 // Helper function to get stored conversations (used by get-conversations route)
-export function getStoredConversations(): any[] {
-  try {
-    const conversationList = Array.from(conversations.values());
-    console.log(`getStoredConversations: Found ${conversationList.length} conversations`);
-    
-    // Ensure all conversations have required properties
-    const validConversations = conversationList.filter(conv => {
-      if (!conv || typeof conv !== 'object') {
-        console.warn('getStoredConversations: Invalid conversation object:', conv);
-        return false;
-      }
-      
-      if (typeof conv.id !== 'string' || !conv.id.trim()) {
-        console.warn('getStoredConversations: Invalid conversation id:', conv.id);
-        return false;
-      }
-      
-      if (typeof conv.title !== 'string') {
-        console.warn('getStoredConversations: Invalid conversation title:', typeof conv.title);
-        return false;
-      }
-      
-      if (typeof conv.lastMessage !== 'string') {
-        console.warn('getStoredConversations: Invalid conversation lastMessage:', typeof conv.lastMessage);
-        return false;
-      }
-      
-      if (typeof conv.timestamp !== 'number' || isNaN(conv.timestamp)) {
-        console.warn('getStoredConversations: Invalid conversation timestamp:', conv.timestamp);
-        return false;
-      }
-      
-      return true;
-    });
-    
-    if (validConversations.length !== conversationList.length) {
-      console.warn(`getStoredConversations: Filtered out ${conversationList.length - validConversations.length} invalid conversations`);
-    }
-    
-    return validConversations.sort((a, b) => b.timestamp - a.timestamp);
-  } catch (error) {
-    console.error('Error getting stored conversations:', error);
-    return [];
-  }
+export function getStoredConversations() {
+  return Array.from(conversations.values()).sort((a, b) => b.timestamp - a.timestamp);
 }
 
 // Health check endpoint for monitoring

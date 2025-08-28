@@ -9,6 +9,7 @@ import {
   Platform,
   Animated,
   Dimensions,
+  ScrollView,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
@@ -294,12 +295,12 @@ export default function ChatHomeScreen() {
     const isDesktop = deviceType === 'desktop';
     
     return (
-      <Animated.ScrollView 
+      <ScrollView 
         contentContainerStyle={[
-          styles.emptyState,
+          styles.emptyState, 
+          { opacity: fadeAnim },
           isDesktop && styles.emptyStateDesktop
         ]}
-        style={{ opacity: fadeAnim }}
         showsVerticalScrollIndicator={false}
       >
         <LinearGradient
@@ -337,7 +338,7 @@ export default function ChatHomeScreen() {
             <Text style={styles.startButtonText}>Begin Weaving</Text>
           </LinearGradient>
         </TouchableOpacity>
-      </Animated.ScrollView>
+      </ScrollView>
     );
   };
 

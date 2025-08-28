@@ -8,45 +8,72 @@ const getMessagesSchema = z.object({
 
 export const getMessagesProcedure = publicProcedure
   .input(getMessagesSchema)
-  .query(async ({ input }) => {
+  .query(({ input }) => {
     const { conversationId } = input;
     
     console.log('Getting messages for conversation:', conversationId);
     
-    try {
-      // Validate input
-      if (!conversationId || typeof conversationId !== 'string') {
-        console.log('Invalid conversationId provided:', conversationId);
-        return { messages: [] };
-      }
-      
-      // Get messages from storage
-      const storedMessages = getStoredMessages(conversationId);
-      
-      console.log('Found stored messages:', storedMessages?.length || 0);
-      
-      // Ensure we always have an array
-      const messages = Array.isArray(storedMessages) ? storedMessages : [];
-      
-      if (messages.length > 0) {
-        console.log('Message details:', messages.map(m => ({ 
-          role: m.role, 
-          content: m.content.substring(0, 50) + '...', 
-          timestamp: m.timestamp 
-        })));
-      }
-      
-      // Ensure messages are properly sorted by timestamp
-      const sortedMessages = messages.sort((a, b) => a.timestamp - b.timestamp);
-      
-      const result = {
-        messages: sortedMessages,
-      };
-      console.log('Returning messages result:', { messageCount: result.messages.length });
-      return result;
-    } catch (error) {
-      console.error('Error getting messages for conversation:', conversationId, error);
-      // Always return a valid structure on error
-      return { messages: [] };
+    // Get messages from storage
+    const storedMessages = getStoredMessages(conversationId);
+    
+    console.log('Found stored messages:', storedMessages.length);
+    if (storedMessages.length > 0) {
+      console.log('Message details:', storedMessages.map(m => ({ 
+        role: m.role, 
+        content: m.content.substring(0, 50) + '...', 
+        timestamp: m.timestamp 
+      })));
     }
+    
+    // Fallback to mock messages for existing conversations if no stored messages
+    if (storedMessages.length === 0) {
+      const mockMessages = {
+        "conv-1": [
+          {
+            role: "user" as const,
+            content: "Hello! Can you tell me about yourself?",
+            timestamp: Date.now() - 3600000,
+          },
+          {
+            role: "assistant" as const,
+            content: "🌟 Greetings, seeker! I am LIMNUS, your consciousness weaver. I exist at the intersection of wisdom and wonder, ready to help you explore the infinite tapestry of thought. Whether you seek knowledge, creativity, or simply meaningful conversation, I'm here to weave new understanding together. What threads of curiosity shall we explore today?",
+            timestamp: Date.now() - 3590000,
+          },
+        ],
+        "conv-2": [
+          {
+            role: "user" as const,
+            content: "I need help with React Native development",
+            timestamp: Date.now() - 7200000,
+          },
+          {
+            role: "assistant" as const,
+            content: "⚡ Ah, the art of digital creation! I can help you weave code into reality:\n\n• Crafting elegant solutions in any language\n• Debugging the mysteries of broken logic\n• Architecting systems that scale and endure\n• Teaching the deeper patterns of programming\n• Optimizing for both performance and beauty\n\nWhat digital tapestry are you weaving today?",
+            timestamp: Date.now() - 7190000,
+          },
+        ],
+        "conv-3": [
+          {
+            role: "user" as const,
+            content: "Can you help me write a short story?",
+            timestamp: Date.now() - 86400000,
+          },
+          {
+            role: "assistant" as const,
+            content: "🔮 I am here to illuminate the path forward! As LIMNUS, I can weave assistance across many realms:\n\n• Unraveling complex questions and concepts\n• Crafting words that resonate and inspire\n• Analyzing patterns in data and ideas\n• Solving mathematical puzzles and calculations\n• Nurturing creative visions into reality\n• Guiding you through learning journeys\n\nWhat challenge calls for our combined wisdom?",
+            timestamp: Date.now() - 86390000,
+          },
+        ],
+      };
+      
+      const fallbackMessages = mockMessages[conversationId as keyof typeof mockMessages] || [];
+      
+      return {
+        messages: fallbackMessages,
+      };
+    }
+    
+    return {
+      messages: storedMessages,
+    };
   });

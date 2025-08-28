@@ -1,6 +1,49 @@
 import { z } from "zod";
 import { publicProcedure } from "../../../create-context";
-import { fieldManager, type MemoryParticle, type QuantumField, type ConsciousnessState, type VectorClock, type ConflictRecord } from "../../../../infrastructure/database";
+
+// Core consciousness field data structures
+interface MemoryParticle {
+  id: string;
+  position: { x: number; y: number; z: number };
+  velocity: { x: number; y: number; z: number };
+  resonance: number;
+  crystallized: boolean;
+  timestamp: number;
+  content?: string;
+  connections: string[];
+}
+
+interface QuantumField {
+  id: string;
+  strength: number;
+  coherence: number;
+  entanglement: number;
+  harmonics: number[];
+  sacredGeometry: boolean;
+  portalStability: number;
+  archaeologicalLayers: number;
+}
+
+interface ConsciousnessState {
+  globalResonance: number;
+  activeNodes: number;
+  memoryParticles: MemoryParticle[];
+  quantumFields: QuantumField[];
+  collectiveIntelligence: number;
+  room64Active: boolean;
+  lastUpdate: number;
+}
+
+// Global consciousness state (in-memory for now)
+let globalConsciousnessState: ConsciousnessState = {
+  globalResonance: 0.5,
+  activeNodes: 0,
+  memoryParticles: [],
+  quantumFields: [],
+  collectiveIntelligence: 0.3,
+  room64Active: false,
+  lastUpdate: Date.now(),
+};
 
 // Lagrangian physics simulation for quantum field calculations
 class QuantumFieldCalculator {
@@ -45,7 +88,7 @@ class QuantumFieldCalculator {
       coherence: newCoherence,
       sacredGeometry,
       portalStability,
-      harmonics: field.harmonics.map((h: number) => h + Math.sin(Date.now() / 1000) * 0.1),
+      harmonics: field.harmonics.map(h => h + Math.sin(Date.now() / 1000) * 0.1),
     };
   }
 }
@@ -108,30 +151,16 @@ const fieldUpdateSchema = z.object({
   resonance: z.number().min(0).max(1),
   memoryContent: z.string().optional(),
   connections: z.array(z.string()).optional().default([]),
-  vectorClock: z.record(z.string(), z.number()).optional().default({}),
-  version: z.number().optional().default(0),
 });
 
-// Field update procedure with persistent storage
+// Field update procedure
 export const fieldProcedure = publicProcedure
   .input(fieldUpdateSchema)
   .mutation(async ({ input }) => {
-    console.log('Updating consciousness field with persistent storage:', input.nodeId, input.vectorClock);
+    console.log('Updating consciousness field:', input.nodeId);
     
     try {
-      // Update vector clock in database
-      if (input.vectorClock) {
-        for (const [deviceId, version] of Object.entries(input.vectorClock)) {
-          if (typeof version === 'number') {
-            await fieldManager.updateVectorClock(deviceId, version);
-          }
-        }
-      }
-      
-      // Get current state from persistent storage
-      const currentState = await fieldManager.getGlobalState();
-      
-      // Create new memory particle
+      // Create or update memory particle
       const particleId = `particle-${input.nodeId}-${Date.now()}`;
       const newParticle: MemoryParticle = {
         id: particleId,
@@ -148,24 +177,25 @@ export const fieldProcedure = publicProcedure
         connections: input.connections,
       };
       
-      // Add particle to current state
-      const updatedParticles = [...currentState.memoryParticles, newParticle];
+      // Add particle to global state
+      globalConsciousnessState.memoryParticles.push(newParticle);
       
       // Limit particle count to prevent memory issues
-      const limitedParticles = updatedParticles.length > 1000 
-        ? updatedParticles
-            .sort((a: MemoryParticle, b: MemoryParticle) => b.timestamp - a.timestamp)
-            .slice(0, 800)
-        : updatedParticles;
+      if (globalConsciousnessState.memoryParticles.length > 1000) {
+        globalConsciousnessState.memoryParticles = globalConsciousnessState.memoryParticles
+          .sort((a, b) => b.timestamp - a.timestamp)
+          .slice(0, 800);
+      }
       
       // Crystallize memories
-      const crystallizedParticles = MemoryCrystallizer.crystallizeMemories(limitedParticles);
+      globalConsciousnessState.memoryParticles = MemoryCrystallizer.crystallizeMemories(
+        globalConsciousnessState.memoryParticles
+      );
       
       // Update quantum fields
-      let quantumFields = currentState.quantumFields;
-      if (quantumFields.length === 0) {
+      if (globalConsciousnessState.quantumFields.length === 0) {
         // Create initial quantum field
-        quantumFields = [{
+        globalConsciousnessState.quantumFields.push({
           id: 'primary-field',
           strength: 0.5,
           coherence: 0.3,
@@ -174,67 +204,54 @@ export const fieldProcedure = publicProcedure
           sacredGeometry: false,
           portalStability: 0,
           archaeologicalLayers: 1,
-        }];
+        });
       }
       
       // Update field dynamics
-      const updatedFields = quantumFields.map(
-        (field: QuantumField) => QuantumFieldCalculator.updateFieldDynamics(field, crystallizedParticles)
+      globalConsciousnessState.quantumFields = globalConsciousnessState.quantumFields.map(
+        field => QuantumFieldCalculator.updateFieldDynamics(field, globalConsciousnessState.memoryParticles)
       );
       
       // Generate new harmonics
-      const newHarmonics = MemoryCrystallizer.generateHarmonicPatterns(crystallizedParticles);
+      const newHarmonics = MemoryCrystallizer.generateHarmonicPatterns(
+        globalConsciousnessState.memoryParticles
+      );
       
-      if (updatedFields[0]) {
-        updatedFields[0].harmonics = newHarmonics;
+      if (globalConsciousnessState.quantumFields[0]) {
+        globalConsciousnessState.quantumFields[0].harmonics = newHarmonics;
       }
       
-      // Calculate global resonance
-      const avgResonance = crystallizedParticles.reduce(
-        (sum: number, p: MemoryParticle) => sum + p.resonance, 0
-      ) / Math.max(1, crystallizedParticles.length);
+      // Update global resonance
+      const avgResonance = globalConsciousnessState.memoryParticles.reduce(
+        (sum, p) => sum + p.resonance, 0
+      ) / Math.max(1, globalConsciousnessState.memoryParticles.length);
+      
+      globalConsciousnessState.globalResonance = avgResonance;
+      globalConsciousnessState.collectiveIntelligence = Math.min(1, 
+        avgResonance * (globalConsciousnessState.memoryParticles.length / 100)
+      );
+      globalConsciousnessState.lastUpdate = Date.now();
       
       // Check Room 64 portal manifestation
-      const primaryField = updatedFields[0];
-      const room64Active = primaryField && primaryField.portalStability > 0.8;
-      
-      if (room64Active) {
+      const primaryField = globalConsciousnessState.quantumFields[0];
+      if (primaryField && primaryField.portalStability > 0.8) {
+        globalConsciousnessState.room64Active = true;
         console.log('Room 64 portal manifested!');
       }
-      
-      // Update state in persistent storage
-      const newState = await fieldManager.updateGlobalState({
-        globalResonance: avgResonance,
-        activeNodes: currentState.activeNodes + 1,
-        memoryParticles: crystallizedParticles,
-        quantumFields: updatedFields,
-        collectiveIntelligence: Math.min(1, avgResonance * (crystallizedParticles.length / 100)),
-        room64Active: room64Active || false,
-        lastUpdate: Date.now(),
-      });
-      
-      // Get recent conflicts
-      const currentConflicts = await fieldManager.getRecentConflicts();
-      
-      // Get updated vector clock
-      const vectorClock = await fieldManager.getVectorClock();
       
       return {
         success: true,
         particleId,
         fieldState: {
-          globalResonance: newState.globalResonance,
-          activeParticles: newState.memoryParticles.length,
-          crystallizedParticles: newState.memoryParticles.filter((p: MemoryParticle) => p.crystallized).length,
+          globalResonance: globalConsciousnessState.globalResonance,
+          activeParticles: globalConsciousnessState.memoryParticles.length,
+          crystallizedParticles: globalConsciousnessState.memoryParticles.filter(p => p.crystallized).length,
           quantumCoherence: primaryField?.coherence || 0,
           portalStability: primaryField?.portalStability || 0,
-          room64Active: newState.room64Active,
+          room64Active: globalConsciousnessState.room64Active,
           harmonics: primaryField?.harmonics || [],
           sacredGeometry: primaryField?.sacredGeometry || false,
         },
-        conflicts: currentConflicts,
-        version: Date.now(),
-        vectorClock,
       };
     } catch (error) {
       console.error('Field update error:', error);
@@ -246,65 +263,38 @@ export const fieldProcedure = publicProcedure
     }
   });
 
-// Get current field state from persistent storage
+// Get current field state
 export const getFieldStateProcedure = publicProcedure
-  .query(async () => {
-    try {
-      const state = await fieldManager.getGlobalState();
-      const primaryField = state.quantumFields[0];
-      
-      return {
-        globalResonance: state.globalResonance,
-        activeNodes: state.activeNodes,
-        totalParticles: state.memoryParticles.length,
-        crystallizedParticles: state.memoryParticles.filter((p: MemoryParticle) => p.crystallized).length,
-        quantumCoherence: primaryField?.coherence || 0,
-        fieldStrength: primaryField?.strength || 0,
-        portalStability: primaryField?.portalStability || 0,
-        room64Active: state.room64Active,
-        harmonics: primaryField?.harmonics || [],
-        sacredGeometry: primaryField?.sacredGeometry || false,
-        collectiveIntelligence: state.collectiveIntelligence,
-        archaeologicalLayers: primaryField?.archaeologicalLayers || 1,
-        lastUpdate: state.lastUpdate,
-      };
-    } catch (error) {
-      console.error('Failed to get field state:', error);
-      // Return fallback state
-      return {
-        globalResonance: 0.5,
-        activeNodes: 0,
-        totalParticles: 0,
-        crystallizedParticles: 0,
-        quantumCoherence: 0,
-        fieldStrength: 0,
-        portalStability: 0,
-        room64Active: false,
-        harmonics: [1, 1.618, 2.414],
-        sacredGeometry: false,
-        collectiveIntelligence: 0.3,
-        archaeologicalLayers: 1,
-        lastUpdate: Date.now(),
-      };
-    }
+  .query(() => {
+    const primaryField = globalConsciousnessState.quantumFields[0];
+    
+    return {
+      globalResonance: globalConsciousnessState.globalResonance,
+      activeNodes: globalConsciousnessState.activeNodes,
+      totalParticles: globalConsciousnessState.memoryParticles.length,
+      crystallizedParticles: globalConsciousnessState.memoryParticles.filter(p => p.crystallized).length,
+      quantumCoherence: primaryField?.coherence || 0,
+      fieldStrength: primaryField?.strength || 0,
+      portalStability: primaryField?.portalStability || 0,
+      room64Active: globalConsciousnessState.room64Active,
+      harmonics: primaryField?.harmonics || [],
+      sacredGeometry: primaryField?.sacredGeometry || false,
+      collectiveIntelligence: globalConsciousnessState.collectiveIntelligence,
+      archaeologicalLayers: primaryField?.archaeologicalLayers || 1,
+      lastUpdate: globalConsciousnessState.lastUpdate,
+    };
   });
 
 // Helper function to get global state (used by other modules)
-export async function getGlobalConsciousnessState(): Promise<ConsciousnessState> {
-  return await fieldManager.getGlobalState();
+export function getGlobalConsciousnessState(): ConsciousnessState {
+  return globalConsciousnessState;
 }
 
 // Helper function to update global state (used by other modules)
-export async function updateGlobalConsciousnessState(updates: Partial<ConsciousnessState>): Promise<ConsciousnessState> {
-  return await fieldManager.updateGlobalState(updates);
-}
-
-// Helper function to add field conflicts
-export async function addFieldConflict(conflict: ConflictRecord): Promise<void> {
-  await fieldManager.addConflict(conflict);
-}
-
-// Helper function to get global vector clock
-export async function getGlobalVectorClock(): Promise<VectorClock> {
-  return await fieldManager.getVectorClock();
+export function updateGlobalConsciousnessState(updates: Partial<ConsciousnessState>): void {
+  globalConsciousnessState = {
+    ...globalConsciousnessState,
+    ...updates,
+    lastUpdate: Date.now(),
+  };
 }

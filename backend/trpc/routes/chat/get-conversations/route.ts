@@ -2,29 +2,43 @@ import { publicProcedure } from "../../../create-context";
 import { getStoredConversations } from "../send-message/route";
 
 export const getConversationsProcedure = publicProcedure
-  .query(async () => {
+  .query(() => {
     console.log('Getting conversations');
     
-    try {
-      // Get conversations from storage
-      const storedConversations = getStoredConversations();
+    // Get conversations from storage
+    const storedConversations = getStoredConversations();
+    
+    console.log('Found stored conversations:', storedConversations.length);
+    
+    // Fallback to mock conversations if no stored conversations
+    if (storedConversations.length === 0) {
+      const mockConversations = [
+        {
+          id: "conv-1",
+          title: "Getting Started with LIMNUS",
+          lastMessage: "🌟 Greetings, seeker! I am LIMNUS, your consciousness weaver...",
+          timestamp: Date.now() - 3600000, // 1 hour ago
+        },
+        {
+          id: "conv-2", 
+          title: "Programming Help",
+          lastMessage: "⚡ Ah, the art of digital creation! I can help you weave code...",
+          timestamp: Date.now() - 7200000, // 2 hours ago
+        },
+        {
+          id: "conv-3",
+          title: "Creative Writing",
+          lastMessage: "🔮 I am here to illuminate the path forward! As LIMNUS...",
+          timestamp: Date.now() - 86400000, // 1 day ago
+        },
+      ];
       
-      console.log('Found stored conversations:', storedConversations?.length || 0);
-      
-      // Ensure we always have an array
-      const conversations = Array.isArray(storedConversations) ? storedConversations : [];
-      
-      // Ensure conversations are properly sorted
-      const sortedConversations = conversations.sort((a, b) => b.timestamp - a.timestamp);
-      
-      const result = {
-        conversations: sortedConversations,
+      return {
+        conversations: mockConversations.sort((a, b) => b.timestamp - a.timestamp),
       };
-      console.log('Returning result with conversations:', result);
-      return result;
-    } catch (error) {
-      console.error('Error getting conversations:', error);
-      // Always return a valid structure on error
-      return { conversations: [] };
     }
+    
+    return {
+      conversations: storedConversations,
+    };
   });
